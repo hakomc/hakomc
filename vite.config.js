@@ -14,8 +14,8 @@ export default defineConfig({
     lib: {
       entry: {
         'index': resolve(__dirname, 'core/index.ts'),
-        'form/jsx-runtime/index': resolve(__dirname, 'core/form/tsx/runtime.ts'),
-        'form/component/index': resolve(__dirname, 'core/form/tsx/components/index.ts'),
+        'form/jsx-runtime/index': resolve(__dirname, 'core/form/runtime.ts'),
+        'form/component/index': resolve(__dirname, 'core/form/components/index.ts'),
         'vite-plugin/index': resolve(__dirname, 'vite-plugin/index.ts'),
       },
       formats: ['es'],
