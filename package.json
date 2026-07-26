@@ -1,0 +1,68 @@
+{
+  "name": "hakomc",
+  "version": "1.0.0",
+  "description": "Enhance ScriptAPI",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && vite build",
+    "prepare": "npm run build"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/core/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "form/jsx-runtime": [
+        "./dist/core/form/tsx/runtime.d.ts"
+      ],
+      "form/jsx-dev-runtime": [
+        "./dist/core/form/tsx/runtime.d.ts"
+      ],
+      "form/component": [
+        "./dist/core/form/tsx/components/index.d.ts"
+      ],
+      "vite-plugin": [
+        "./dist/vite-plugin/index.d.ts"
+      ]
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./form/jsx-runtime": {
+      "types": "./dist/core/form/tsx/runtime.d.ts",
+      "import": "./dist/form/jsx-runtime/index.js",
+      "default": "./dist/form/jsx-runtime/index.js"
+    },
+    "./form/jsx-dev-runtime": {
+      "types": "./dist/core/form/tsx/runtime.d.ts",
+      "import": "./dist/form/jsx-runtime/index.js",
+      "default": "./dist/form/jsx-runtime/index.js"
+    },
+    "./form/component": {
+      "types": "./dist/core/form/tsx/components/index.d.ts",
+      "import": "./dist/form/component/index.js",
+      "default": "./dist/form/component/index.js"
+    },
+    "./vite-plugin": {
+      "types": "./dist/vite-plugin/index.d.ts",
+      "import": "./dist/vite-plugin/index.js",
+      "default": "./dist/vite-plugin/index.js"
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.38.0",
+    "@minecraft/server": "^2.8.0",
+    "@minecraft/server-ui": "^2.1.0",
+    "@minecraft/math": "^2.4.0",
+    "@types/node": "^24.9.2",
+    "eslint": "^9.38.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.2",
+    "vite": "^7.1.7",
+    "vite-plugin-dts": "^4.5.4"
+  }
+}
