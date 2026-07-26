@@ -27,6 +27,7 @@
   "include": [
     "core/**/*",
     "vite-plugin/**/*",
+    "tests/**/*",
   ],
   "exclude": [
     "node_modules",

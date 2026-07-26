@@ -108,7 +108,7 @@ export class TextFormat {
     }
 
     const base = TextFormat.RESET + baseFormat;
-    return base + input.replace(TextFormat.RESET, base);
+    return base + input.split(TextFormat.RESET).join(base);
   }
 
   /**

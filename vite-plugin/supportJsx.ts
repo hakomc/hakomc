@@ -6,7 +6,7 @@ const supportJsx = (): Plugin => ({
     return {
       esbuild: {
         jsx: 'automatic',
-        jsxImportSource: 'keystonemc/form',
+        jsxImportSource: 'hakomc/form',
       },
     };
   },

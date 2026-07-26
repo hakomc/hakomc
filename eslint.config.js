@@ -6,6 +6,7 @@ export default defineConfig({
   files: [
     'core/**/*.ts',
     'vite-plugin/**/*.ts',
+    'tests/**/*.ts',
   ],
   ignores: ['dev/**/*.ts'],
   extends: [
