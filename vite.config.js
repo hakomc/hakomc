@@ -16,6 +16,7 @@ export default defineConfig({
         'index': resolve(__dirname, 'core/index.ts'),
         'form/jsx-runtime/index': resolve(__dirname, 'core/form/runtime.ts'),
         'form/component/index': resolve(__dirname, 'core/form/components/index.ts'),
+        'form/ddui/component/index': resolve(__dirname, 'core/form/ddui/components/index.ts'),
         'vite-plugin/index': resolve(__dirname, 'vite-plugin/index.ts'),
       },
       formats: ['es'],

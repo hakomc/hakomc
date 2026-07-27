@@ -23,6 +23,9 @@
       "form/component": [
         "./dist/core/form/components/index.d.ts"
       ],
+      "form/ddui/component": [
+        "./dist/core/form/ddui/components/index.d.ts"
+      ],
       "vite-plugin": [
         "./dist/vite-plugin/index.d.ts"
       ]
@@ -48,6 +51,11 @@
       "types": "./dist/core/form/components/index.d.ts",
       "import": "./dist/form/component/index.js",
       "default": "./dist/form/component/index.js"
+    },
+    "./form/ddui/component": {
+      "types": "./dist/core/form/ddui/components/index.d.ts",
+      "import": "./dist/form/ddui/component/index.js",
+      "default": "./dist/form/ddui/component/index.js"
     },
     "./vite-plugin": {
       "types": "./dist/vite-plugin/index.d.ts",
