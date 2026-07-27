@@ -3,7 +3,7 @@ import dts from "vite-plugin-dts";
 import { resolve } from 'path';
 
 export default defineConfig({
-  plugins: [dts({ exclude: ['tests/**/*'] })],
+  plugins: [dts({ exclude: ['tests/**/*'], clearPureImport: false })],
   resolve: {
     alias: {
       '@': resolve(__dirname, 'core'),

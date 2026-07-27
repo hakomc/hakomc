@@ -1,3 +1,5 @@
+import '../../player';
+
 import CustomForm from './CustomForm';
 import MessageBox from './MessageBox';
 import Button from './Button';
