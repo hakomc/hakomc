@@ -171,11 +171,11 @@ globalThis.__SOURCE_MAP__ = ${JSON.stringify(embeddedSourceMap)};
     }
 
     // .mapファイルを削除
-    for (const fileName in bundle) {
+    /**for (const fileName in bundle) {
       if (fileName.endsWith('.map')) {
         delete bundle[fileName];
       }
-    }
+    }*/
   },
 
   writeBundle: async (_options: NormalizedOutputOptions, bundle: OutputBundle) => {
