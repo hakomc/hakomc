@@ -17,15 +17,16 @@ export interface FetchInit {
   timeout?: number;
 }
 
+const SUPPORTED_METHODS = Object.values(HttpRequestMethod) as string[];
 const METHOD_LOOKUP = new Map<string, HttpRequestMethod>(
-  Object.values(HttpRequestMethod).map(method => [method, method])
+  SUPPORTED_METHODS.map(method => [method.toUpperCase(), method as HttpRequestMethod])
 );
 
 function resolveMethod(method: string): HttpRequestMethod {
   const resolved = METHOD_LOOKUP.get(method.toUpperCase());
   if (!resolved) {
     throw new TypeError(
-      `@minecraft/server-net does not support the "${method}" method. Supported methods: ${[...METHOD_LOOKUP.keys()].join(', ')}`
+      `@minecraft/server-net does not support the "${method}" method. Supported methods: ${SUPPORTED_METHODS.join(', ')}`
     );
   }
   return resolved;

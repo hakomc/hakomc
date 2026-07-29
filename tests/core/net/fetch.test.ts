@@ -35,7 +35,8 @@ const { httpMock, HttpRequestMock, HttpHeaderMock, HttpRequestMethod } = vi.hois
     httpMock: { request: vi.fn() },
     HttpRequestMock,
     HttpHeaderMock,
-    HttpRequestMethod: { DELETE: 'DELETE', GET: 'GET', HEAD: 'HEAD', POST: 'POST', PUT: 'PUT' },
+    // 実機の HttpRequestMethod は Pascal-case ("Get" 等) の値を持つ。
+    HttpRequestMethod: { Delete: 'Delete', Get: 'Get', Head: 'Head', Patch: 'Patch', Post: 'Post', Put: 'Put' },
   };
 });
 
@@ -80,7 +81,7 @@ describe('fetch', () => {
     expect(httpMock.request).toHaveBeenCalledTimes(1);
     const sent = httpMock.request.mock.calls[0][0] as InstanceType<typeof HttpRequestMock>;
     expect(sent.uri).toBe('https://example.com');
-    expect(sent.method).toBe('GET');
+    expect(sent.method).toBe('Get');
     expect(res.status).toBe(200);
     expect(res.ok).toBe(true);
     expect(res.url).toBe('https://example.com');
@@ -103,7 +104,7 @@ describe('fetch', () => {
     });
 
     const sent = httpMock.request.mock.calls[0][0] as InstanceType<typeof HttpRequestMock>;
-    expect(sent.method).toBe('POST');
+    expect(sent.method).toBe('Post');
     expect(sent.body).toBe('{"name":"a"}');
     expect(sent.timeout).toBe(5);
     expect(sent.headers).toEqual([{ key: 'x-test', value: 'abc' }]);
@@ -123,8 +124,21 @@ describe('fetch', () => {
   });
 
   it('rejects with TypeError for a method @minecraft/server-net does not support', async () => {
-    await expect(fetch('https://example.com', { method: 'PATCH' })).rejects.toThrow(TypeError);
+    await expect(fetch('https://example.com', { method: 'TRACE' })).rejects.toThrow(TypeError);
     expect(httpMock.request).not.toHaveBeenCalled();
+  });
+
+  it('resolves a supported method regardless of input casing, against a non-uppercase enum', async () => {
+    httpMock.request.mockResolvedValue(mockHttpResponse({
+      status: 200,
+      body: '',
+      uri: 'https://example.com',
+    }));
+
+    await fetch('https://example.com', { method: 'patch' });
+
+    const sent = httpMock.request.mock.calls[0][0] as InstanceType<typeof HttpRequestMock>;
+    expect(sent.method).toBe('Patch');
   });
 
   it('merges duplicate response headers with a comma', async () => {
