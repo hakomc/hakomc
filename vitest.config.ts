@@ -6,6 +6,7 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'core'),
       '@minecraft/server-ui': resolve(__dirname, 'tests/stubs/server-ui.ts'),
+      '@minecraft/server-net': resolve(__dirname, 'tests/stubs/server-net.ts'),
     },
   },
   test: {
