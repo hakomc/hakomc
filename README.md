@@ -1,5 +1,8 @@
 # hakomc
 
+[![Test & Lint](https://github.com/hakomc/hakomc/actions/workflows/ci.yml/badge.svg)](https://github.com/hakomc/hakomc/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/hakomc.svg)](https://www.npmjs.com/package/hakomc)
+
 [English](#english) | [日本語](#日本語)
 
 ## English
