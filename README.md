@@ -16,6 +16,11 @@ The project consists of two main concepts:
 
 This repository is the core source of the framework side.
 
+### API Documentation
+- [Core (`hakomc`): Timer / Net / Debug](docs/api/core.md)
+- [Form (`hakomc/form/component`)](docs/api/form.md)
+- [DDUI (`hakomc/form/ddui/component`)](docs/api/ddui.md)
+
 ### Development workflow
 1. Create a new working branch such as feature/*
 1. Update the library under core/
@@ -35,6 +40,11 @@ ScriptAPIを使用したライブラリやプラグイン作成をサポート�
 - フレームワーク: hakomc
 
 このリポジトリはフレームワーク側のコアソースになっています。
+
+### APIドキュメント
+- [Core (`hakomc`): Timer / Net / Debug](docs/api/core.md)
+- [Form (`hakomc/form/component`)](docs/api/form.md)
+- [DDUI (`hakomc/form/ddui/component`)](docs/api/ddui.md)
 
 ### 開発手順
 1. feature/* 等で新しく作業ブランチを切る
