@@ -103,6 +103,8 @@ res.json();                          // parsed body (not a Promise)
 debug(...args: any[]): void
 ```
 
+<img src="../images/debug.png" />
+
 `console.log` replacement that also shows the file/line it was called from.
 
 ---
@@ -205,5 +207,7 @@ res.json();                          // パース済みボディ(Promiseでは�
 ```ts
 debug(...args: any[]): void
 ```
+
+<img src="../images/debug.png" />
 
 `console.log`の代替。呼び出し元のファイル・行も表示する。
