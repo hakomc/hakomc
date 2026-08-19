@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "Enhance ScriptAPI",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hakomc/hakomc.git"
+  },
   "scripts": {
     "build": "tsc && vite build",
     "prepare": "npm run build",
