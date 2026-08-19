@@ -159,12 +159,13 @@ globalThis.__SOURCE_MAP__ = ${JSON.stringify(embeddedSourceMap)};
 
 `;
 
-        // コードを修正
-        const originalCode = file.code;
-        const modifiedCode = sourceMapEmbed + originalCode;
-        // 外部ソースマップURLコメントを削除
-        file.code = modifiedCode.replace(/\/\/# sourceMappingURL=.+$/gm, '');
-        
+        // 外部ソースマップURLコメントを削除（埋め込みJSONを結合する前に行う。
+        // sourcesContentにはビルド済み依存パッケージ由来の
+        // `//# sourceMappingURL=...` 文字列がそのまま含まれることがあり、
+        // 結合後に置換すると埋め込みJSONごと巻き込んで壊してしまうため）
+        const cleanedCode = file.code.replace(/\/\/# sourceMappingURL=.+$/gm, '');
+        file.code = sourceMapEmbed + cleanedCode;
+
         // ソースマップファイルを削除（埋め込み済みなので不要）
         file.map = null;
       }
