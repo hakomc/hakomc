@@ -4,7 +4,7 @@ import { resolve, relative, join } from 'path';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import { stableUuid, listFiles, cleanDir, writeZip, routeAssets, copyRouted, ASSET_ROUTES, writeJsonFiles, writeLang } from './packFiles';
-import { loadPack } from './packLoader';
+import { loadPack, PackLoadError } from './packLoader';
 import type { PackFiles } from '../core/entity/entity';
 
 type ManifestStub = {
@@ -161,7 +161,10 @@ const behaviorPacker = ({
   const assetsPath = resolve(process.cwd(), assetsDir);
   const rpUUIDFor = (cfg: ResourcePackConfig) => cfg.uuid ?? derive('resource_pack');
   const rpVersion = (resourcePack || undefined)?.version ?? version;
-  const packEntry = pack === false ? undefined : pack ?? (fs.existsSync(resolve(process.cwd(), 'src/pack.ts')) ? 'src/pack.ts' : undefined);
+  // 既定では、src/pack.ts があればそれ、無ければスクリプトの入口（src/index.ts）から register() されたエンティティを集める
+  const autoEntry = pack === undefined;
+  const packEntry = pack === false ? undefined
+    : pack ?? (['src/pack.ts', 'src/index.ts'].find((f) => fs.existsSync(resolve(process.cwd(), f))));
   let packFiles: PackFiles | undefined;
 
   return {
@@ -176,10 +179,16 @@ const behaviorPacker = ({
     if (packEntry) {
       try {
         const loaded = await loadPack(packEntry);
-        packFiles = loaded.files;
+        packFiles = loaded.entities ? loaded.files : undefined;
         for (const f of loaded.watchFiles) this.addWatchFile(f);
       } catch (e) {
-        this.error(`${packEntry} の読み込みに失敗: ${e instanceof Error ? e.message : String(e)}`);
+        const err = e instanceof PackLoadError ? e : new PackLoadError(String(e), 0, false);
+        // エンティティを使っていないプロジェクトで、スクリプトの入口が模擬環境で動かないだけなら、止めずに知らせる
+        if (autoEntry && packEntry === 'src/index.ts' && !err.registered && !err.isDefinitionError) {
+          this.warn(`エンティティの定義を集めるために ${packEntry} を模擬環境で読み込んだが、失敗した（エンティティを使っていなければ問題ない。使っているなら src/pack.ts を置くか、トップレベルの処理を system.run の中に移す）: ${err.message}`);
+        } else {
+          this.error(`${packEntry} からエンティティの定義を作れなかった: ${err.message}`);
+        }
       }
     }
   },

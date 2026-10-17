@@ -1,0 +1,202 @@
+/**
+ * 登録した（register した）エンティティのクラスに、ゲームのイベントを届ける。
+ *
+ * - エンティティ 1 体につき、クラスのオブジェクトを 1 つ作って持っておく
+ * - 出現・読み込み・ダメージ・攻撃・右クリック・死亡・削除・毎 tick を、該当する個体のメソッドに届ける
+ * - 登録の一覧は globalThis に置く（ビルド時にプラグインが、ここから JSON を作るエンティティを集めるため）
+ */
+import { system, world, type Entity } from '@minecraft/server';
+import { registry, type Entry, type HookTarget, type LastKnown, type RegisteredClass } from './registry';
+
+export { registry, resetRegistry, type LastKnown, type RegisteredClass } from './registry';
+
+const DIMENSIONS = ['overworld', 'nether', 'the_end'];
+let installed = false;
+
+/** クラスを登録し、まだならイベントの購読を始める */
+export function register(cls: RegisteredClass): void {
+  const map = registry();
+  const prev = map.get(cls.id);
+  if (prev && prev.cls !== cls) {
+    throw new Error(`[hakomc/entity] ${cls.id} は ${prev.cls.name} として登録済み。${cls.name} を同じ識別子で登録しようとした`);
+  }
+  if (prev) return;
+  const proto = cls.prototype as HookTarget;
+  map.set(cls.id, {
+    cls,
+    instances: new Map(),
+    last: new Map(),
+    hasTick: typeof proto.onTick === 'function',
+    hasDie: typeof proto.onDie === 'function',
+  });
+  install();
+}
+
+/** 登録済みなら、そのエンティティのオブジェクト（無ければ作る）。登録していなければ undefined */
+export function instanceOf(e: Entity): HookTarget | undefined {
+  let entry: Entry | undefined;
+  try {
+    entry = registry().get(e.typeId);
+  } catch {
+    return undefined;
+  }
+  return entry ? ensure(entry, e) : undefined;
+}
+
+/** その種類の、今いる個体のオブジェクト */
+export function instancesOf(cls: RegisteredClass): HookTarget[] {
+  return [...(registry().get(cls.id)?.instances.values() ?? [])];
+}
+
+/**
+ * オブジェクトを返す。まだ無ければ作り、onLoad を呼ぶ
+ * （出現イベントの前に別のイベントが届いた・起動時の探索で漏れた、などのとき用）
+ */
+function ensure(entry: Entry, e: Entity, isNewSpawn = false, spawnEvent?: unknown): HookTarget {
+  const existing = entry.instances.get(e.id);
+  // 読み込まれ直したエンティティは、別のオブジェクトとして渡されることがある。古いものが無効なら作り直す
+  if (existing && (existing.entity === e || isValid(existing.entity))) return existing;
+  const obj = new entry.cls(e);
+  entry.instances.set(e.id, obj);
+  if (isNewSpawn) obj.onSpawn?.(spawnEvent);
+  else obj.onLoad?.();
+  return obj;
+}
+
+const isValid = (e: Entity) => {
+  try {
+    return e.isValid;
+  } catch {
+    return false;
+  }
+};
+
+const entryOf = (e: Entity | undefined): Entry | undefined => {
+  if (!e) return undefined;
+  try {
+    return registry().get(e.typeId);
+  } catch {
+    return undefined;
+  }
+};
+
+const forget = (entry: Entry, id: string) => {
+  entry.instances.delete(id);
+  entry.last.delete(id);
+};
+
+/** 起動時・/reload 時に、すでにいる個体を探す */
+function scan() {
+  for (const entry of registry().values()) {
+    for (const dim of DIMENSIONS) {
+      let found: Entity[] = [];
+      try {
+        found = world.getDimension(dim).getEntities({ type: entry.cls.id });
+      } catch {
+        continue;
+      }
+      for (const e of found) ensure(entry, e);
+    }
+  }
+}
+
+function snapshot(entry: Entry, obj: HookTarget) {
+  const e = obj.entity;
+  const properties: LastKnown['properties'] = {};
+  for (const p of entry.cls.definition.properties ?? []) {
+    const name = entry.cls.propertyName(p);
+    properties[name] = e.getProperty(name);
+  }
+  entry.last.set(e.id, { location: e.location, dimensionId: e.dimension.id, properties });
+}
+
+function install() {
+  if (installed) return;
+  installed = true;
+  const after = world.afterEvents;
+
+  after.entitySpawn.subscribe((ev) => {
+    const entry = entryOf(ev.entity);
+    if (!entry) return;
+    // 読み込みによる出現は onLoad として扱う（entityLoad と二重にならないよう、ensure が 1 回にまとめる）
+    ensure(entry, ev.entity, ev.cause !== 'Loaded', ev);
+  });
+  after.entityLoad.subscribe((ev) => {
+    const entry = entryOf(ev.entity);
+    if (entry) ensure(entry, ev.entity);
+  });
+  after.entityHurt.subscribe((ev) => {
+    const entry = entryOf(ev.hurtEntity);
+    if (entry) ensure(entry, ev.hurtEntity).onHurt?.(ev);
+  });
+  after.entityHitEntity.subscribe((ev) => {
+    const entry = entryOf(ev.damagingEntity);
+    if (entry) ensure(entry, ev.damagingEntity).onHit?.(ev);
+  });
+  after.playerInteractWithEntity.subscribe((ev) => {
+    const entry = entryOf(ev.target);
+    if (entry) ensure(entry, ev.target).onInteract?.(ev);
+  });
+  after.entityDie.subscribe((ev) => {
+    // 実機では、死亡の通知の時点でエンティティはほぼ読めない。id と typeId だけ使う
+    let id: string, typeId: string;
+    try {
+      id = ev.deadEntity.id;
+      typeId = ev.deadEntity.typeId;
+    } catch {
+      return;
+    }
+    const entry = registry().get(typeId);
+    const obj = entry?.instances.get(id);
+    if (!entry || !obj) return;
+    const last = entry.last.get(id) ?? { location: { x: 0, y: 0, z: 0 }, dimensionId: '', properties: {} };
+    try {
+      obj.onDie?.(ev, last);
+    } finally {
+      let valid = false;
+      try {
+        valid = ev.deadEntity.isValid;
+      } catch { /* 読めなければ無効 */ }
+      if (!valid) forget(entry, id);
+    }
+  });
+  // 消える直前（読み込まれなくなるときも含む）。この時点ではまだ読めるが、世界は変更できない
+  world.beforeEvents.entityRemove.subscribe((ev) => {
+    const entry = entryOf(ev.removedEntity);
+    if (!entry) return;
+    const id = ev.removedEntity.id;
+    const obj = entry.instances.get(id);
+    forget(entry, id);
+    obj?.onRemove?.();
+  });
+  after.entityRemove.subscribe((ev) => {
+    const entry = registry().get(ev.typeId);
+    if (entry) forget(entry, ev.removedEntityId);
+  });
+
+  world.afterEvents.worldLoad.subscribe(() => scan());
+  // /reload のときなど worldLoad が来ない場合に備えて、最初の tick でも探す（二重には作らない）
+  system.run(() => scan());
+
+  system.runInterval(() => {
+    const errors: unknown[] = [];
+    for (const entry of registry().values()) {
+      if (!entry.hasTick && !entry.hasDie) continue;
+      for (const [id, obj] of entry.instances) {
+        if (!isValid(obj.entity)) {
+          forget(entry, id);
+          continue;
+        }
+        try {
+          if (entry.hasDie) snapshot(entry, obj);
+          obj.onTick?.();
+        } catch (e) {
+          // 1 体の例外で、ほかの個体の処理を止めない
+          console.error(`[hakomc/entity] ${entry.cls.name}.onTick (entity ${id}):`, e);
+          errors.push(e);
+        }
+      }
+    }
+    if (errors.length) throw errors[0];
+  }, 1);
+}

@@ -6,12 +6,13 @@
 
 ## English
 
-Define custom entities in TypeScript. At build time `behaviorPacker` turns the definitions into the behavior pack entity JSON, the resource pack client entity and the localisation files. The same classes are used from your scripts, so property and event names cannot drift apart.
+Define custom entities in TypeScript, together with their behaviour. At build time `behaviorPacker` turns the definitions into the behavior pack entity JSON, the resource pack client entity and the localisation files. In the game, the same class receives the events of each entity (`onHurt`, `onTick`…), so property and event names cannot drift apart.
 
 ### Example
 
 ```ts
 // src/entities/morgrave.ts
+import type { EntityHurtAfterEvent } from '@minecraft/server';
 import {
   BoolProperty, ComponentGroup, EntityEvent, EnumProperty, entity, health, movement, set, timer, type Component,
 } from 'hakomc/entity';
@@ -41,30 +42,56 @@ export class Morgrave extends entity('hako:morgrave', {
   events: [Enrage],
   client: { geometry: 'geometry.morgrave', textures: 'textures/entity/morgrave' },
 }) {
-  enrage() {
-    if (!this.get(IsAngry)) this.trigger(Enrage);
+  damage = 0;   // per-entity, not saved (see below)
+
+  onHurt(ev: EntityHurtAfterEvent) {
+    this.damage += ev.damage;
+    if (this.damage >= 240 && !this.get(IsAngry)) this.trigger(Enrage);
   }
 }
+Morgrave.register();
 ```
 
 ```ts
-// src/pack.ts — read by behaviorPacker at build time
+// src/index.ts — the script entry
+import './entities/morgrave';
+```
+
+`register()` does two things: in the game it turns the hooks on, and at build time `behaviorPacker` loads `src/index.ts` (with the simulated `@minecraft/server`) and generates the JSON of every registered entity. To leave an entity out, stop importing it — the JSON and the hooks go together.
+
+Images, sounds and models go in `assets/` (see [Vite Plugin](vite-plugin.md)).
+
+### Hooks
+
+Write only the ones you need. Each one is called on the object of that entity.
+
+| Hook | When |
+| --- | --- |
+| `onSpawn(ev: EntitySpawnAfterEvent)` | Newly spawned (egg, summon, breeding…) |
+| `onLoad()` | Loaded rather than spawned: chunk load, world start, `/reload`. Existing entities are found at start-up |
+| `onHurt(ev: EntityHurtAfterEvent)` | It took damage |
+| `onHit(ev: EntityHitEntityAfterEvent)` | It hit something (melee) |
+| `onInteract(ev: PlayerInteractWithEntityAfterEvent)` | A player used / right-clicked it |
+| `onTick()` | Every tick |
+| `onDie(ev: EntityDieAfterEvent, last: LastKnown)` | It died. `this.entity` can no longer be read; `last` has the location, dimension and property values from the last tick |
+| `onRemove()` | Just before it is removed or unloaded. Still readable, but the world cannot be changed here (before event) |
+
+- One object per entity: `Morgrave.of(entity)` returns the same object the hooks get, so fields are shared. `Morgrave.instances()` lists the loaded ones.
+- An exception in one entity's `onTick` does not stop the others (it is logged, then rethrown).
+- The hook parameter types are checked against the base class; write them (`ev: EntityHurtAfterEvent`), TypeScript does not infer them for methods.
+
+### Using `src/pack.ts` instead
+
+If `src/index.ts` cannot run in the simulated environment (it calls something not simulated at the top level), put the list in `src/pack.ts`; it is used instead of `src/index.ts` when it exists. Registration for the hooks is still `register()`.
+
+```ts
+// src/pack.ts
 import { definePack } from 'hakomc/entity';
 import { Morgrave } from './entities/morgrave';
 export default definePack({ entities: [Morgrave] });
 ```
 
-```ts
-// src/index.ts — scripts
-import { world } from '@minecraft/server';
-import { Morgrave } from './entities/morgrave';
-
-world.afterEvents.entityHurt.subscribe(({ hurtEntity }) => {
-  if (Morgrave.is(hurtEntity)) Morgrave.of(hurtEntity).enrage();
-});
-```
-
-Images, sounds and models go in `assets/` (see [Vite Plugin](vite-plugin.md)).
+When `src/index.ts` fails to load and nothing was registered yet, the build continues with a warning (projects that do not use entities are not affected). If something was registered, the build stops, since the JSON would be incomplete.
 
 ### Building blocks
 
@@ -98,13 +125,15 @@ Malformed identifiers, duplicate names (properties, events, groups, entities), d
 | Member | |
 | --- | --- |
 | `Morgrave.is(entity)` | `typeId` matches |
-| `Morgrave.of(entity)` | An instance of your class for that entity |
+| `Morgrave.of(entity)` | The object of your class for that entity (the same one the hooks get) |
+| `Morgrave.register()` | Turn the hooks on / include the entity in the build |
+| `Morgrave.instances()` | Loaded entities of this class |
 | `this.entity` | The `Entity` |
 | `get(P)` / `set(P, value)` | Typed `getProperty` / `setProperty`. Values set are readable at the end of the tick (game behaviour) |
 | `trigger(E)` | `triggerEvent` |
 | `Morgrave.propertyName(P)` / `Morgrave.eventName(E)` | The JSON name, for `/event`, molang, etc. |
 
-Instances are thin wrappers: create them when you need them. Fields you add to your class are **not** saved; use properties for anything that must survive chunk unloads and restarts.
+Fields you add to your class are **not** saved: the object is created again when the entity is loaded again (chunk unload, restart, `/reload`). Use properties for anything that must survive.
 
 ### Updating the components
 
@@ -118,12 +147,13 @@ A test fails if the generated file is older than the installed package. The offi
 
 ## 日本語
 
-カスタムエンティティを TypeScript で定義します。ビルド時に `behaviorPacker` が定義を読み込み、ビヘイビアパックのエンティティ JSON・リソースパックのクライアント側のエンティティ・ローカライズのファイルを作ります。スクリプトからも同じクラスを使うので、プロパティやイベントの名前がずれることがありません。
+カスタムエンティティを、振る舞いと一緒に TypeScript で定義します。ビルド時に `behaviorPacker` が定義を読み込み、ビヘイビアパックのエンティティ JSON・リソースパックのクライアント側のエンティティ・ローカライズのファイルを作ります。ゲーム内では、同じクラスに個体ごとのイベント（`onHurt`・`onTick` など）が届くので、プロパティやイベントの名前がずれることがありません。
 
 ### 例
 
 ```ts
 // src/entities/morgrave.ts
+import type { EntityHurtAfterEvent } from '@minecraft/server';
 import {
   BoolProperty, ComponentGroup, EntityEvent, EnumProperty, entity, health, movement, set, timer, type Component,
 } from 'hakomc/entity';
@@ -153,30 +183,56 @@ export class Morgrave extends entity('hako:morgrave', {
   events: [Enrage],
   client: { geometry: 'geometry.morgrave', textures: 'textures/entity/morgrave' },
 }) {
-  enrage() {
-    if (!this.get(IsAngry)) this.trigger(Enrage);
+  damage = 0;   // 1 体ごとの値。保存はされない（後述）
+
+  onHurt(ev: EntityHurtAfterEvent) {
+    this.damage += ev.damage;
+    if (this.damage >= 240 && !this.get(IsAngry)) this.trigger(Enrage);
   }
 }
+Morgrave.register();
 ```
 
 ```ts
-// src/pack.ts — ビルド時に behaviorPacker が読み込む
+// src/index.ts — スクリプトの入口
+import './entities/morgrave';
+```
+
+`register()` には 2 つの役割があります。ゲーム内ではフックを有効にし、ビルド時には `behaviorPacker` が `src/index.ts` を（`@minecraft/server` を模擬に差し替えて）読み込んで、登録されたエンティティの JSON を作ります。エンティティを外したいときは、import をやめるだけです。JSON とフックが一緒に外れます。
+
+画像・音・モデルは `assets/` に置きます（[Vite Plugin](vite-plugin.md) を参照）。
+
+### フック
+
+必要なものだけ書いてください。どれも、その個体のオブジェクトで呼ばれます。
+
+| フック | いつ |
+| --- | --- |
+| `onSpawn(ev: EntitySpawnAfterEvent)` | 新しく出現した（スポーンエッグ・召喚・繁殖など） |
+| `onLoad()` | 出現ではなく読み込まれた（チャンクの読み込み、ワールドの起動、`/reload`）。起動時はすでにいる個体を探す |
+| `onHurt(ev: EntityHurtAfterEvent)` | ダメージを受けた |
+| `onHit(ev: EntityHitEntityAfterEvent)` | 攻撃（近接）を当てた |
+| `onInteract(ev: PlayerInteractWithEntityAfterEvent)` | プレイヤーに右クリック（使用）された |
+| `onTick()` | 毎 tick |
+| `onDie(ev: EntityDieAfterEvent, last: LastKnown)` | 死んだ。`this.entity` はもう読めないので、`last` に直前の tick の位置・ディメンション・プロパティの値を入れて渡す |
+| `onRemove()` | 消える・読み込まれなくなる直前。まだ読めるが、世界を変更する操作はできない（before イベントのため） |
+
+- **1 体につき 1 つのオブジェクト:** `Morgrave.of(entity)` は、フックに渡されるのと同じオブジェクトを返すので、フィールドも共有されます。`Morgrave.instances()` で、読み込まれている個体の一覧を得られます。
+- **例外:** ある個体の `onTick` で例外が出ても、ほかの個体は止まりません（ログに出してから投げ直します）。
+- **引数の型:** フックの引数の型は、基底クラスと照らし合わせて確認されます。ただし、メソッドの引数は TypeScript が推論しないので、`ev: EntityHurtAfterEvent` のように書いてください。
+
+### 代わりに `src/pack.ts` を使う
+
+`src/index.ts` が模擬環境で動かない（模擬していない機能をトップレベルで呼んでいる）場合は、一覧を `src/pack.ts` に書きます。`src/pack.ts` があれば、`src/index.ts` の代わりにそちらを使います。フックを有効にするのは、この場合も `register()` です。
+
+```ts
+// src/pack.ts
 import { definePack } from 'hakomc/entity';
 import { Morgrave } from './entities/morgrave';
 export default definePack({ entities: [Morgrave] });
 ```
 
-```ts
-// src/index.ts — スクリプト
-import { world } from '@minecraft/server';
-import { Morgrave } from './entities/morgrave';
-
-world.afterEvents.entityHurt.subscribe(({ hurtEntity }) => {
-  if (Morgrave.is(hurtEntity)) Morgrave.of(hurtEntity).enrage();
-});
-```
-
-画像・音・モデルは `assets/` に置きます（[Vite Plugin](vite-plugin.md) を参照）。
+`src/index.ts` の読み込みに失敗したとき、まだ何も登録されていなければ、警告を出してビルドを続けます（エンティティを使っていないプロジェクトには影響しません）。何か登録されていた場合は、JSON が欠けてしまうので、ビルドを止めます。
 
 ### 部品
 
@@ -210,13 +266,15 @@ world.afterEvents.entityHurt.subscribe(({ hurtEntity }) => {
 | メンバー | |
 | --- | --- |
 | `Morgrave.is(entity)` | `typeId` が一致するか |
-| `Morgrave.of(entity)` | そのエンティティ用の、自分のクラスのオブジェクト |
+| `Morgrave.of(entity)` | そのエンティティ用の、自分のクラスのオブジェクト（フックに渡されるのと同じもの） |
+| `Morgrave.register()` | フックを有効にし、ビルドの対象にする |
+| `Morgrave.instances()` | 読み込まれている、このクラスの個体 |
 | `this.entity` | `Entity` |
 | `get(P)` / `set(P, 値)` | 型付きの `getProperty` / `setProperty`。書いた値が読めるのは tick の終わり（実機の挙動） |
 | `trigger(E)` | `triggerEvent` |
 | `Morgrave.propertyName(P)` / `Morgrave.eventName(E)` | JSON での名前（`/event` や molang などで使う） |
 
-オブジェクトは薄い包みなので、必要なときに作ってください。クラスに足したフィールドは**保存されません**。チャンクの読み込み直しや再起動のあとも残したい値は、プロパティにしてください。
+クラスに足したフィールドは**保存されません**。エンティティが読み込まれ直すと（チャンクの読み込み直し、再起動、`/reload`）、オブジェクトは作り直されます。残したい値は、プロパティにしてください。
 
 ### コンポーネントの更新
 

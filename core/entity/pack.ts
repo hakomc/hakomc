@@ -1,4 +1,5 @@
-import { EntityDefinitionError, type EntityClass, type PackFiles } from './entity';
+import type { EntityClass, PackFiles } from './entity';
+import { EntityDefinitionError } from './errors';
 
 export interface PackDefinition {
   entities?: EntityClass[];

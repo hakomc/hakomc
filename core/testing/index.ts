@@ -213,6 +213,10 @@ export const sim = {
    */
   hurt(targetArg: Entity, amount: number, opts: { cause?: string, damagingEntity?: Entity } = {}) {
     const target = targetArg as unknown as MockEntity;
+    // 近接攻撃が当たったことの通知（ダメージが取り消されても、当たったこと自体は通知される）
+    if (opts.damagingEntity && (opts.cause ?? 'entityAttack') === 'entityAttack') {
+      signals.worldAfter.entityHitEntity.emit({ damagingEntity: opts.damagingEntity, hitEntity: target });
+    }
     const before = { hurtEntity: target, damage: amount, damageSource: { cause: opts.cause ?? 'entityAttack', damagingEntity: opts.damagingEntity }, cancel: false };
     signals.worldBefore.entityHurt.emit(before);
     if (before.cancel) { record('damageCancelled', { entityId: target.id, damage: amount, by: opts.damagingEntity?.typeId }); rethrowNewErrors(); return false; }
