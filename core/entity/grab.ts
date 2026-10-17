@@ -23,6 +23,23 @@ export type ReleaseReason = 'released' | 'timeout' | 'holderDied' | 'holderGone'
 
 export type LockKind = 'movement' | 'lateral' | 'jump' | 'sneak' | 'camera';
 
+/**
+ * バニラのカメラのプリセット（@minecraft/vanilla-data の MinecraftCameraPresetsTypes と同じ値）。
+ * vanilla-data を import すると、全ブロック・アイテムの一覧までスクリプトに入るので、ここで持つ。
+ */
+export const CameraPreset = {
+  ControlSchemeCamera: 'minecraft:control_scheme_camera',
+  FirstPerson: 'minecraft:first_person',
+  FixedBoom: 'minecraft:fixed_boom',
+  FollowOrbit: 'minecraft:follow_orbit',
+  Free: 'minecraft:free',
+  ThirdPerson: 'minecraft:third_person',
+  ThirdPersonFront: 'minecraft:third_person_front',
+} as const;
+
+/** カメラのプリセット。バニラのものは補完が効き、自作のプリセット（'my:camera' など）も書ける */
+export type CameraPresetId = (typeof CameraPreset)[keyof typeof CameraPreset] | (string & {});
+
 const LOCKS: Record<LockKind, InputPermissionCategory> = {
   movement: InputPermissionCategory.Movement,
   lateral: InputPermissionCategory.LateralMovement,
@@ -34,8 +51,8 @@ const LOCKS: Record<LockKind, InputPermissionCategory> = {
 export interface GrabOptions {
   /** 掴んでいる側から見た位置 [x, y, z]（ブロック単位。向きに合わせて回る。既定 [0, 0, 1.5] = 正面） */
   offset?: readonly [number, number, number];
-  /** 掴んでいる間のカメラ（例 'minecraft:third_person'）。省略すると変えない */
-  camera?: string | { preset: string, options?: Record<string, unknown> };
+  /** 掴んでいる間のカメラ（例 CameraPreset.ThirdPerson）。省略すると変えない */
+  camera?: CameraPresetId | { preset: CameraPresetId, options?: Record<string, unknown> };
   /** 止める操作（既定 ['movement', 'jump']） */
   lock?: readonly LockKind[];
   /** 掴まれた側を、掴んでいる側の頭に向かせるか（既定 true） */

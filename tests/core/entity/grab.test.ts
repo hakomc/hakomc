@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { EntityDamageCause, InputPermissionCategory, type Player } from '@minecraft/server';
 import { sim } from '../../../core/testing';
-import { EnumProperty, entity, health, holdOf, type ReleaseReason, type Steps } from '../../../core/entity';
+import { CameraPreset, EnumProperty, entity, health, holdOf, type ReleaseReason, type Steps } from '../../../core/entity';
 import { registry } from '../../../core/entity/registry';
 
 const released: ReleaseReason[] = [];
@@ -56,6 +56,12 @@ describe('掴み: 固定と制限', () => {
     expect(holdOf(player)).toBeUndefined();
     sim.tick(3);
     expect(player.location).toEqual({ x: 0, y: 0, z: 1.5 });
+  });
+  it('カメラは CameraPreset でも、文字列（自作のプリセット）でも書ける', () => {
+    const { holder, player } = setup();
+    holder.grab(player, { camera: CameraPreset.FollowOrbit }).release();
+    holder.grab(player, { camera: { preset: 'my:custom_camera', options: { easeOptions: { easeTime: 0.5 } } } }).release();
+    expect(cameras(player)).toEqual(['set:minecraft:follow_orbit', 'clear', 'set:my:custom_camera', 'clear']);
   });
   it('camera を決めなければカメラは触らない', () => {
     const { holder, player } = setup();
@@ -137,7 +143,7 @@ class Flytrap extends entity('demo:flytrap', {
 
   /** 捕まえて 1 秒ごとに 3 回かじり、吐き出して 3 秒休む */
   *biteSteps(t: Steps, target: Player) {
-    const hold = this.grab(target, { offset: [0, 0.8, 0.9], camera: 'minecraft:third_person' });
+    const hold = this.grab(target, { offset: [0, 0.8, 0.9], camera: CameraPreset.ThirdPerson });
     try {
       this.set(TrapPhase, 'closed');
       for (let i = 0; i < 3 && hold.active; i++) {

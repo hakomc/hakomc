@@ -163,7 +163,7 @@ Golem.register();
 
 ```ts
 *biteSteps(t: Steps, target: Player) {
-  const hold = this.grab(target, { offset: [0, 0.8, 0.9], camera: 'minecraft:third_person' });
+  const hold = this.grab(target, { offset: [0, 0.8, 0.9], camera: CameraPreset.ThirdPerson });
   try {
     for (let i = 0; i < 3 && hold.active; i++) {
       yield* t.wait(20);
@@ -178,7 +178,7 @@ Golem.register();
 | Option | |
 | --- | --- |
 | `offset` | `[x, y, z]` from the holder, rotated with it (default `[0, 0, 1.5]`, in front) |
-| `camera` | Camera preset while held, e.g. `'minecraft:third_person'` (or `{ preset, options }`). Left alone if omitted |
+| `camera` | Camera preset while held: `CameraPreset.ThirdPerson` etc. (the vanilla presets, same values as `MinecraftCameraPresetsTypes` in `@minecraft/vanilla-data`), or the id of your own preset; `{ preset, options }` for options. Left alone if omitted |
 | `lock` | Inputs to disable: `'movement'`, `'lateral'`, `'jump'`, `'sneak'`, `'camera'` (default movement and jump) |
 | `face` | Turn the player to the holder's head (default true) |
 | `max` | Let go after this many ticks |
@@ -418,7 +418,7 @@ Golem.register();
 
 ```ts
 *biteSteps(t: Steps, target: Player) {
-  const hold = this.grab(target, { offset: [0, 0.8, 0.9], camera: 'minecraft:third_person' });
+  const hold = this.grab(target, { offset: [0, 0.8, 0.9], camera: CameraPreset.ThirdPerson });
   try {
     for (let i = 0; i < 3 && hold.active; i++) {
       yield* t.wait(20);
@@ -433,7 +433,7 @@ Golem.register();
 | オプション | |
 | --- | --- |
 | `offset` | 掴んでいる側から見た `[x, y, z]`。向きに合わせて回る（既定 `[0, 0, 1.5]` = 正面） |
-| `camera` | 掴んでいる間のカメラ。例 `'minecraft:third_person'`（または `{ preset, options }`）。省略すると変えない |
+| `camera` | 掴んでいる間のカメラ。`CameraPreset.ThirdPerson` など（バニラのプリセット。`@minecraft/vanilla-data` の `MinecraftCameraPresetsTypes` と同じ値）か、自作のプリセットの識別子。オプション付きは `{ preset, options }`。省略すると変えない |
 | `lock` | 止める操作: `'movement'`・`'lateral'`・`'jump'`・`'sneak'`・`'camera'`（既定は移動とジャンプ） |
 | `face` | プレイヤーを掴んでいる側の頭に向かせる（既定 true） |
 | `max` | この tick 数を過ぎたら放す |
