@@ -27,23 +27,6 @@ export const listFiles = (dir: string): string[] => {
   return out;
 };
 
-/**
- * src の中身を dest にコピーする。skip に入っている（src 直下からの相対）パスは飛ばす。
- * @returns コピーしたファイルの、dest からの相対パス
- */
-export const copyDir = (src: string, dest: string, skip: string[] = []): string[] => {
-  const copied: string[] = [];
-  for (const file of listFiles(src)) {
-    const rel = relative(src, file).split(sep).join('/');
-    if (skip.some((s) => rel === s || rel.startsWith(`${s}/`))) continue;
-    const to = join(dest, rel);
-    fs.mkdirSync(join(to, '..'), { recursive: true });
-    fs.copyFileSync(file, to);
-    copied.push(rel);
-  }
-  return copied;
-};
-
 /** dir の中身を消す（keep に入っている直下の名前は残す） */
 export const cleanDir = (dir: string, keep: string[] = []) => {
   if (!fs.existsSync(dir)) return;
@@ -123,4 +106,59 @@ export const writeZip = (outPath: string, entries: Array<{ path: string, data: B
   end.writeUInt32LE(offset, 16);
   fs.mkdirSync(join(outPath, '..'), { recursive: true });
   fs.writeFileSync(outPath, Buffer.concat([...locals, ...centrals, end]));
+};
+
+/** assets/ 直下のフォルダ名と、そのまま入れる先のパック。ここに無い名前は assets/behavior/ か assets/resource/ に置く */
+export const ASSET_ROUTES: Record<string, 'bp' | 'rp'> = {
+  textures: 'rp',
+  sounds: 'rp',
+  models: 'rp',
+  particles: 'rp',
+  font: 'rp',
+  structures: 'bp',
+  functions: 'bp',
+};
+
+export type RoutedFile = { src: string, rel: string };
+
+/**
+ * assets フォルダのファイルを、ビヘイビアパックとリソースパックに振り分ける。
+ * - behavior/ と resource/ の中身は、それぞれのパックの直下にそのまま入る
+ * - ASSET_ROUTES にあるフォルダは、決まったパックにフォルダごと入る
+ * - 直下の pack_icon.png は両方のパックに入る
+ * - それ以外と、生成物と重なるもの（manifest.json・BP の scripts/）は skipped
+ */
+export const routeAssets = (dir: string) => {
+  const bp: RoutedFile[] = [];
+  const rp: RoutedFile[] = [];
+  const skipped: Array<{ rel: string, reason: 'generated' | 'unknown' }> = [];
+  for (const src of listFiles(dir)) {
+    const rel = relative(dir, src).split(sep).join('/');
+    const [top, ...rest] = rel.split('/');
+    const inner = rest.join('/');
+    if (rel === 'pack_icon.png') {
+      bp.push({ src, rel });
+      rp.push({ src, rel });
+    } else if (top === 'behavior' && rest.length) {
+      if (inner === 'manifest.json' || inner.startsWith('scripts/')) skipped.push({ rel, reason: 'generated' });
+      else bp.push({ src, rel: inner });
+    } else if (top === 'resource' && rest.length) {
+      if (inner === 'manifest.json') skipped.push({ rel, reason: 'generated' });
+      else rp.push({ src, rel: inner });
+    } else if (rest.length && ASSET_ROUTES[top]) {
+      (ASSET_ROUTES[top] === 'bp' ? bp : rp).push({ src, rel });
+    } else {
+      skipped.push({ rel, reason: 'unknown' });
+    }
+  }
+  return { bp, rp, skipped };
+};
+
+/** 振り分けたファイルを dest にコピーする */
+export const copyRouted = (files: RoutedFile[], dest: string) => {
+  for (const { src, rel } of files) {
+    const to = join(dest, rel);
+    fs.mkdirSync(join(to, '..'), { recursive: true });
+    fs.copyFileSync(src, to);
+  }
 };

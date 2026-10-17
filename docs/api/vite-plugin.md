@@ -6,17 +6,25 @@
 
 ## English
 
-Builds `src/index.ts` into a behavior pack and writes its `manifest.json`. It can also copy the behavior pack's other files, build a resource pack beside it, and package both as a `.mcaddon`.
+Builds `src/index.ts` into a behavior pack and writes its `manifest.json`. It can also copy files from `assets/` into the behavior pack and a resource pack, and package both as a `.mcaddon`.
+
+Definitions (entities, animations, localisation…) are meant to be written in TypeScript and generated (see the entity DSL, coming next). `assets/` is for what cannot be generated: images, sounds, structures and models made in external tools.
 
 ### Project layout
 
 ```
 my-addon/
-├─ src/index.ts            → dist/behavior_pack/scripts/
-├─ behavior_pack/          → dist/behavior_pack/   (optional: entities, items, loot_tables, texts…)
-├─ resource_pack/          → dist/resource_pack/   (optional: textures, models, animations…)
+├─ src/index.ts                → dist/behavior_pack/scripts/
+├─ assets/                     (optional)
+│   ├─ textures/ sounds/ models/ particles/ font/   → dist/resource_pack/<same folder>/
+│   ├─ structures/ functions/                       → dist/behavior_pack/<same folder>/
+│   ├─ pack_icon.png                                → both packs
+│   ├─ behavior/               → dist/behavior_pack/   (anything else, e.g. hand-written JSON)
+│   └─ resource/               → dist/resource_pack/
 └─ vite.config.ts
 ```
+
+Both packs have folders with the same name but different meaning (`entities/`, `texts/`…), so anything outside the folders above goes under `behavior/` or `resource/`. Other files are skipped with a warning.
 
 ```ts
 // vite.config.ts
@@ -34,17 +42,17 @@ export default defineConfig({
 });
 ```
 
-Existing configs keep working: if `behavior_pack/` and `resource_pack/` do not exist, the output is the same as before.
+Existing configs keep working: without `assets/`, the output is the same as before.
 
 ### What it does
 
 | Item | Behaviour |
 | --- | --- |
-| Behavior pack files | Everything in `behavior_pack/` is copied. A `data` module is added to the manifest. `manifest.json` and `scripts/` in that folder are skipped with a warning, because the plugin generates them |
-| Resource pack | Built when `resource_pack/` exists. The manifest is generated, and the two packs depend on each other (players get both) |
+| Behavior pack files | Copied as described above. A `data` module is added to the manifest. `behavior/manifest.json`, `behavior/scripts/` and `resource/manifest.json` are skipped with a warning, because the plugin generates them |
+| Resource pack | Built when some file goes to it (or `resourcePack` is set). The manifest is generated, and the two packs depend on each other (players get both) |
 | UUIDs | When `uuid` is set, every module UUID and the resource pack UUID are derived from it, so they stay the same on every build. Without `uuid` they are random each time (same as before) |
-| Stale files | Files deleted from the source folders are also removed from `dist/` on the next build |
-| `vite build --watch` | Changes in the source folders trigger a rebuild |
+| Stale files | Files deleted from `assets/` are also removed from `dist/` on the next build |
+| `vite build --watch` | Changes in `assets/` trigger a rebuild |
 | `.mcaddon` | A ZIP holding `behavior_pack/` and `resource_pack/` |
 
 ### Options
@@ -56,23 +64,31 @@ Existing configs keep working: if `behavior_pack/` and `resource_pack/` do not e
 | `description` / `authors` / `version` | | Manifest header and metadata |
 | `embedSourceMap` | | Embed the source map in the script |
 | `manifest` | | Merged into the generated behavior pack manifest (`dependencies` merge by `module_name` / `uuid`) |
-| `behaviorPack.dir` | `'behavior_pack'` | Folder with the behavior pack files |
-| `resourcePack` | on if `resource_pack/` exists | `false` disables it. Or an object: `dir`, `uuid`, `name` (default `<name> resources`), `description`, `version` (default: the behavior pack's), `manifest` (merged into the generated one) |
+| `assetsDir` | `'assets'` | Folder with the files to copy |
+| `resourcePack` | on if some file goes to it | `false` disables it. Or an object: `uuid`, `name` (default `<name> resources`), `description`, `version` (default: the behavior pack's), `manifest` (merged into the generated one) |
 | `mcaddon` | `false` | `true` → `dist/<name>.mcaddon`; a string → that path |
 
 ## 日本語
 
-`src/index.ts` をビヘイビアパックとしてビルドし、`manifest.json` を書き出します。あわせて、スクリプト以外のビヘイビアパックの素材のコピー、リソースパックの作成、両方をまとめた `.mcaddon` の書き出しもできます。
+`src/index.ts` をビヘイビアパックとしてビルドし、`manifest.json` を書き出します。あわせて、`assets/` のファイルをビヘイビアパックとリソースパックに振り分けてコピーし、両方をまとめた `.mcaddon` も書き出せます。
+
+エンティティ・アニメーション・ローカライズなどの定義は、TypeScript で書いて生成する想定です（次に作るエンティティ定義の DSL）。`assets/` に置くのは、生成できないもの（画像・音・ストラクチャー・外部ツールで作ったモデル）です。
 
 ### フォルダ構成
 
 ```
 my-addon/
-├─ src/index.ts            → dist/behavior_pack/scripts/
-├─ behavior_pack/          → dist/behavior_pack/   （任意: entities・items・loot_tables・texts など）
-├─ resource_pack/          → dist/resource_pack/   （任意: textures・models・animations など）
+├─ src/index.ts                → dist/behavior_pack/scripts/
+├─ assets/                     （任意）
+│   ├─ textures/ sounds/ models/ particles/ font/   → dist/resource_pack/<同じフォルダ>/
+│   ├─ structures/ functions/                       → dist/behavior_pack/<同じフォルダ>/
+│   ├─ pack_icon.png                                → 両方のパック
+│   ├─ behavior/               → dist/behavior_pack/   （それ以外。手書きの JSON など）
+│   └─ resource/               → dist/resource_pack/
 └─ vite.config.ts
 ```
+
+両方のパックに、同じ名前で中身の違うフォルダ（`entities/`・`texts/` など）があるので、上の一覧に無いものは `behavior/` か `resource/` の下に置きます。それ以外のファイルはコピーせず警告を出します。
 
 ```ts
 // vite.config.ts
@@ -90,17 +106,17 @@ export default defineConfig({
 });
 ```
 
-今の設定はそのまま動きます。`behavior_pack/` と `resource_pack/` が無ければ、出力はこれまでと同じです。
+今の設定はそのまま動きます。`assets/` が無ければ、出力はこれまでと同じです。
 
 ### やること
 
 | 項目 | 内容 |
 | --- | --- |
-| ビヘイビアパックの素材 | `behavior_pack/` の中身を全てコピーし、マニフェストに `data` モジュールを足す。そのフォルダ内の `manifest.json` と `scripts/` はプラグインが生成するものと重なるので、コピーせず警告を出す |
-| リソースパック | `resource_pack/` があれば作る。マニフェストは自動生成で、BP と RP は互いに依存する（プレイヤーには両方が配られる） |
+| ビヘイビアパックのファイル | 上の振り分けでコピーし、マニフェストに `data` モジュールを足す。`behavior/manifest.json`・`behavior/scripts/`・`resource/manifest.json` はプラグインが生成するものと重なるので、コピーせず警告を出す |
+| リソースパック | 入るファイルがあれば（または `resourcePack` を指定すれば）作る。マニフェストは自動生成で、BP と RP は互いに依存する（プレイヤーには両方が配られる） |
 | UUID | `uuid` を指定すると、各モジュールとリソースパックの UUID をそこから作るので、ビルドのたびに同じになる。指定しなければ毎回ランダム（これまで通り） |
-| 古いファイル | 素材フォルダから消したファイルは、次のビルドで `dist/` からも消える |
-| `vite build --watch` | 素材フォルダの変更でも再ビルドされる |
+| 古いファイル | `assets/` から消したファイルは、次のビルドで `dist/` からも消える |
+| `vite build --watch` | `assets/` の変更でも再ビルドされる |
 | `.mcaddon` | `behavior_pack/` と `resource_pack/` を入れた ZIP |
 
 ### オプション
@@ -112,6 +128,6 @@ export default defineConfig({
 | `description` / `authors` / `version` | | マニフェストの header と metadata |
 | `embedSourceMap` | | ソースマップをスクリプトに埋め込む |
 | `manifest` | | 生成したビヘイビアパックのマニフェストに上書きする内容（`dependencies` は `module_name` / `uuid` ごとにまとめる） |
-| `behaviorPack.dir` | `'behavior_pack'` | ビヘイビアパックの素材のフォルダ |
-| `resourcePack` | `resource_pack/` があれば有効 | `false` で無効。オブジェクトなら `dir`・`uuid`・`name`（既定 `<name> resources`）・`description`・`version`（既定はビヘイビアパックと同じ）・`manifest`（生成したものに上書き） |
+| `assetsDir` | `'assets'` | コピーするファイルを置くフォルダ |
+| `resourcePack` | 入るファイルがあれば有効 | `false` で無効。オブジェクトなら `uuid`・`name`（既定 `<name> resources`）・`description`・`version`（既定はビヘイビアパックと同じ）・`manifest`（生成したものに上書き） |
 | `mcaddon` | `false` | `true` なら `dist/<name>.mcaddon`、文字列ならそのパス |

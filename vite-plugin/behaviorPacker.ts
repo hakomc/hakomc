@@ -3,7 +3,7 @@ import type { OutputBundle, NormalizedOutputOptions } from 'rollup';
 import { resolve, relative, join } from 'path';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
-import { stableUuid, listFiles, copyDir, cleanDir, writeZip } from './packFiles';
+import { stableUuid, listFiles, cleanDir, writeZip, routeAssets, copyRouted, ASSET_ROUTES } from './packFiles';
 
 type ManifestStub = {
   format_version?: number,
@@ -40,8 +40,6 @@ type ManifestStub = {
 };
 
 type ResourcePackConfig = {
-  /** リソースパックの素材を置くフォルダ（既定 'resource_pack'） */
-  dir?: string,
   /** 省略時はビヘイビアパックの uuid から毎回同じ値を作る */
   uuid?: string,
   name?: string,
@@ -60,12 +58,15 @@ type PluginConfig = {
   embedSourceMap?: boolean,
   manifest?: ManifestStub,
   /**
-   * スクリプト以外のビヘイビアパックの素材（entities / items / loot_tables / texts など）を置くフォルダ。
-   * 既定 'behavior_pack'。フォルダが無ければ何もしない。
+   * 画像・音などのファイルを置くフォルダ（既定 'assets'）。中身は次のように振り分ける。
+   * - textures/ sounds/ models/ particles/ font/ → リソースパック
+   * - structures/ functions/ → ビヘイビアパック
+   * - behavior/ と resource/ の中身 → それぞれのパックの直下（JSON を直接置きたいとき）
+   * - 直下の pack_icon.png → 両方
    */
-  behaviorPack?: { dir?: string },
+  assetsDir?: string,
   /**
-   * リソースパックを一緒に作る。既定では 'resource_pack' フォルダがあれば有効になる。false で無効。
+   * リソースパックの設定。既定では、リソースパックに入るファイルがあれば作る。false で作らない。
    * ビヘイビアパックとリソースパックは互いに依存関係を持つ。
    */
   resourcePack?: ResourcePackConfig | false,
@@ -133,7 +134,7 @@ const behaviorPacker = ({
   version = [1, 0, 0],
  embedSourceMap = true,
   manifest: manifestOverride,
-  behaviorPack = {},
+  assetsDir = 'assets',
   resourcePack,
   mcaddon = false,
 }: PluginConfig = {
@@ -149,20 +150,16 @@ const behaviorPacker = ({
   const derive = (what: string) => (uuid ? stableUuid(`${uuid}:${what}`) : crypto.randomUUID());
   const scriptModuleUUID = derive('script');
   const dataModuleUUID = derive('data');
-  const bpDir = resolve(process.cwd(), behaviorPack.dir ?? 'behavior_pack');
-  const rpConfig: ResourcePackConfig | undefined = resourcePack === false
-    ? undefined
-    : resourcePack ?? (fs.existsSync(resolve(process.cwd(), 'resource_pack')) ? {} : undefined);
-  const rpDir = rpConfig ? resolve(process.cwd(), rpConfig.dir ?? 'resource_pack') : undefined;
-  const rpUUID = rpConfig ? (rpConfig.uuid ?? derive('resource_pack')) : undefined;
-  const rpVersion = rpConfig?.version ?? version;
+  const assetsPath = resolve(process.cwd(), assetsDir);
+  const rpUUIDFor = (cfg: ResourcePackConfig) => cfg.uuid ?? derive('resource_pack');
+  const rpVersion = (resourcePack || undefined)?.version ?? version;
 
   return {
   name: 'BehaviorPacker',
 
   buildStart() {
     // vite build --watch のとき、素材フォルダの変更でも作り直す
-    for (const f of [...listFiles(bpDir), ...(rpDir ? listFiles(rpDir) : [])]) this.addWatchFile(f);
+    for (const f of listFiles(assetsPath)) this.addWatchFile(f);
   },
   
   config: () => {
@@ -247,7 +244,19 @@ globalThis.__SOURCE_MAP__ = ${JSON.stringify(embeddedSourceMap)};
       throw new Error('No entry file found');
     }
 
-    const hasBpAssets = fs.existsSync(bpDir);
+    const assets = routeAssets(assetsPath);
+    const where = relative(process.cwd(), assetsPath).split('\\').join('/');
+    const generated = assets.skipped.filter((x) => x.reason === 'generated').map((x) => x.rel);
+    const unknown = assets.skipped.filter((x) => x.reason === 'unknown').map((x) => x.rel);
+    if (generated.length) this.warn(`${where} の ${generated.join(', ')} は生成物と重なるのでコピーしない（manifest は manifest オプションで上書きできる）`);
+    if (unknown.length) this.warn(`${where} の ${unknown.join(', ')} は入れる先のパックが分からないのでコピーしない。${Object.keys(ASSET_ROUTES).join('/')}/ のどれかに置くか、behavior/ か resource/ の下に置く`);
+    // 既定では、リソースパックに入るファイルがあるときだけ作る
+    const rpConfig: ResourcePackConfig | undefined = resourcePack === false
+      ? undefined
+      : resourcePack ?? (assets.rp.length ? {} : undefined);
+    if (resourcePack === false && assets.rp.length) this.warn(`resourcePack: false なので、${where} のリソースパック用のファイル（${assets.rp.length} 個）は使わない`);
+    const rpUUID = rpConfig ? rpUUIDFor(rpConfig) : undefined;
+    const hasBpAssets = assets.bp.length > 0;
     const manifestStub: ManifestStub = {
       'format_version': 2,
       'header': {
@@ -290,15 +299,14 @@ globalThis.__SOURCE_MAP__ = ${JSON.stringify(embeddedSourceMap)};
 
     // ビヘイビアパックの素材（scripts は vite の出力なので残す）
     cleanDir(DIST_BP, ['scripts']);
-    const skipped = listFiles(bpDir).map((f) => relative(bpDir, f).split('\\').join('/')).filter((r) => r === 'manifest.json' || r.startsWith('scripts/'));
-    if (skipped.length) this.warn(`${relative(process.cwd(), bpDir)} の ${skipped.join(', ')} は生成物と重なるのでコピーしない（manifest は manifest オプションで上書きできる）`);
-    copyDir(bpDir, DIST_BP, ['manifest.json', 'scripts']);
+    copyRouted(assets.bp, DIST_BP);
     fs.writeFileSync(join(DIST_BP, 'manifest.json'), JSON.stringify(finalManifest, null, 2));
 
-    if (rpConfig && rpDir && rpUUID) {
-      cleanDir(DIST_RP);
+    // リソースパックは全て生成物なので、毎回作り直す（無効にしたら消す）
+    fs.rmSync(DIST_RP, { recursive: true, force: true });
+    if (rpConfig && rpUUID) {
       fs.mkdirSync(DIST_RP, { recursive: true });
-      copyDir(rpDir, DIST_RP, ['manifest.json']);
+      copyRouted(assets.rp, DIST_RP);
       const rpStub: ManifestStub = {
         'format_version': 2,
         'header': {
