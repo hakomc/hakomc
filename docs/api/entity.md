@@ -149,7 +149,7 @@ Golem.register();
 | `health` | The part breaks after this much damage (counted before the multiplier). Without it the part never breaks |
 | `causes` | Causes passed to the body (default `entityAttack`, `projectile`), so fire or an explosion does not hit the body once per part |
 
-- Generated: an entity per part (`demo:golem_back`, no client entity, so nothing is drawn) and the body's `minecraft:rideable` (do not write your own).
+- Generated: an entity per part (`demo:golem_back`) with a client entity that draws nothing (an empty model), and the body's `minecraft:rideable` (do not write your own).
 - Damage to a part goes to the body, multiplied; the part itself never loses health. Damage from the body itself or its other parts is ignored.
 - A broken part **stays on its seat** with a tiny hitbox and is ignored. Seats are assigned by riding order, so taking a part off would shift every later part to the wrong seat.
 - Part health and the broken state are saved on the body (dynamic property) and survive reloads. When the body is loaded, parts are put back on their seats in order; a missing one is spawned again.
@@ -367,7 +367,7 @@ Golem.register();
 | `health` | この分のダメージで部位が壊れる（倍率を掛ける前の値で減る）。書かなければ壊れない |
 | `causes` | 本体に伝えるダメージの原因（既定 `entityAttack`・`projectile`）。炎や爆発で、部位の数だけ本体が減らないように |
 
-- **作られるもの:** 部位ごとのエンティティ（`demo:golem_back`。クライアント側の定義は無いので何も描かれない）と、本体の `minecraft:rideable` を作ります。`minecraft:rideable` は自分で書かないでください。
+- **作られるもの:** 部位ごとのエンティティ（`demo:golem_back`）と、何も描かないクライアント側の定義（空のモデル）、本体の `minecraft:rideable` を作ります。`minecraft:rideable` は自分で書かないでください。
 - **ダメージの伝わり方:**
   - 部位へのダメージは、倍率を掛けて本体に伝えます。部位自体の体力は減りません。
   - 本体自身や、同じ本体のほかの部位からのダメージは無視します。

@@ -5,7 +5,7 @@ import { Timeline, type Clock, type Steps, type TimelineOptions, type WaitReques
 import type { Component, EventRef } from './component';
 import { EntityEvent, type GroupClass } from './event';
 import type { PropertyClass, ValueOf } from './property';
-import { bodyRideable, partEntityJson, type PartClass } from './part';
+import { bodyRideable, partEntityJson, partResourceFiles, type PartClass } from './part';
 import { partHandle, type PartHandle } from './parts-runtime';
 
 /** 言語ごとの文字列（en_US / ja_JP など） */
@@ -242,7 +242,8 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
       },
     };
 
-    const resource: Record<string, unknown> = {};
+    // 部位の見た目（何も描かない）。本体に client が無くても作る
+    const resource: Record<string, unknown> = { ...partResourceFiles(id, fileName, parts) };
     const c = def.client;
     if (c) {
       const egg = c.spawnEgg && ('texture' in c.spawnEgg

@@ -61,6 +61,17 @@ describe('部位: JSON', () => {
     expect(back.components['minecraft:type_family'].family).toEqual(['hakomc_part', 'golem_part']);
     expect(Object.keys(files)).toEqual(['entities/golem_back.json', 'entities/golem_left_arm.json', 'entities/golem_right_arm.json', 'entities/golem.json']);
   });
+  it('部位の見た目は、空のモデルで何も描かない（本体に client が無くても作る）', () => {
+    const rp = Golem.toFiles().resource as Record<string, any>;
+    expect(Object.keys(rp).sort()).toEqual([
+      'entity/golem_back.entity.json', 'entity/golem_left_arm.entity.json', 'entity/golem_right_arm.entity.json',
+      'models/entity/golem_part.geo.json',
+    ]);
+    expect(rp['entity/golem_back.entity.json']['minecraft:client_entity'].description).toMatchObject({
+      identifier: 'demo:golem_back', geometry: { default: 'geometry.demo_golem_part' },
+    });
+    expect(rp['models/entity/golem_part.geo.json']['minecraft:geometry'][0].bones).toEqual([{ name: 'root', pivot: [0, 0, 0] }]);
+  });
   it('部位を使うときに座席を自分で書く・id が重なる・id の形が違う、はエラー', () => {
     expect(() => entity('demo:x', { parts: [Back], components: [rideable({ seat_count: 1 })] }).toFiles()).toThrow(EntityDefinitionError);
     class Back2 extends Part('back', { seat: [0, 0, 0], size: [1, 1] }) {}

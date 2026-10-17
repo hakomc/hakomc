@@ -98,3 +98,41 @@ export function bodyRideable(bodyId: string, parts: readonly PartClass[]) {
     crouching_skip_interact: true,
   };
 }
+
+/** 部位の見た目: 何も描かない（ボーンだけのモデル） */
+export const partGeometryId = (bodyId: string) => `geometry.${bodyId.replace(':', '_')}_part`;
+
+/**
+ * 部位のクライアント側の定義と、空のモデル。
+ * 見た目の定義が無いエンティティの扱いは環境によって違うことがあるので、
+ * 「何も描かない」ことをはっきりさせるために作る。
+ */
+export function partResourceFiles(bodyId: string, fileName: string, parts: readonly PartClass[]): Record<string, unknown> {
+  if (!parts.length) return {};
+  const geometry = partGeometryId(bodyId);
+  const files: Record<string, unknown> = {
+    [`models/entity/${fileName}_part.geo.json`]: {
+      format_version: '1.16.0',
+      'minecraft:geometry': [{
+        description: { identifier: geometry, texture_width: 16, texture_height: 16, visible_bounds_width: 1, visible_bounds_height: 1, visible_bounds_offset: [0, 0.5, 0] },
+        bones: [{ name: 'root', pivot: [0, 0, 0] }],
+      }],
+    },
+  };
+  for (const part of parts) {
+    files[`entity/${fileName}_${part.id}.entity.json`] = {
+      format_version: '1.10.0',
+      'minecraft:client_entity': {
+        description: {
+          identifier: partTypeId(bodyId, part),
+          materials: { default: 'entity_alphatest' },
+          // モデルが空なので描かれない。参照先が無いと警告が出るので、バニラにあるテクスチャを指す
+          textures: { default: 'textures/blocks/glass' },
+          geometry: { default: geometry },
+          render_controllers: ['controller.render.default'],
+        },
+      },
+    };
+  }
+  return files;
+}
