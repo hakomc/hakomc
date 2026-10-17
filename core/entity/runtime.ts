@@ -100,6 +100,11 @@ function scan() {
   }
 }
 
+/**
+ * その個体の段取りを全て止める。
+ * 1 つの後片付け（finally / onCancel）が例外を投げても、ログに出して残りを止め続ける
+ * （死亡・削除の処理の途中なので、ここで投げ直すと残りの段取りが止まらないまま残ってしまうため）
+ */
 function cancelTimelines(obj: HookTarget, reason: 'died' | 'removed') {
   for (const t of obj.timelines ?? []) {
     try {
@@ -196,8 +201,9 @@ function install() {
     const errors: unknown[] = [];
     for (const entry of registry().values()) {
       for (const [id, obj] of entry.instances) {
-        const timelines = obj.timelines?.filter((t) => t.running) ?? [];
-        if (!entry.hasTick && !entry.hasDie && !timelines.length) continue;
+        // 毎 tick・全個体で通る所なので、配列を作らずに確かめる
+        const hasRunning = obj.timelines?.some((t) => t.running) ?? false;
+        if (!entry.hasTick && !entry.hasDie && !hasRunning) continue;
         if (!isValid(obj.entity)) {
           forget(entry, id);
           continue;
@@ -210,8 +216,10 @@ function install() {
           console.error(`[hakomc/entity] ${entry.cls.name}.onTick (entity ${id}):`, e);
           errors.push(e);
         }
-        // onTick の中で始めた段取りは、始めた時点で最初の yield まで進んでいるので、ここでは進めない
-        for (const t of timelines) {
+        // onTick の中で始めた段取りは、始めた時点で最初の yield まで進んでいる。
+        // 同じ tick にもう一度進めないことは Timeline.advance が確かめる
+        for (const t of obj.timelines ?? []) {
+          if (!t.running) continue;
           try {
             t.advance();
           } catch (e) {

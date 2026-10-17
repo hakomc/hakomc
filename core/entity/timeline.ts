@@ -39,7 +39,13 @@ export interface Steps {
 /** 止まった理由 */
 export type CancelReason = 'cancel' | 'interrupted' | 'died' | 'removed' | 'error';
 
-/** yield で渡す待ち方（ふつうは t.wait / t.until 経由で使う） */
+/**
+ * yield で渡す待ち方。ふつうは t.wait / t.until 経由で使い、自分で作る必要はない。
+ * - `{ ticks }`: その tick 数だけ待つ
+ * - `{ until, deadline }`: until() が true になるまで毎 tick 確かめる。deadline（Clock の時刻）を過ぎたら諦める
+ *
+ * 待ちが終わると、ジェネレーターには until なら true / false、ticks なら undefined が渡される。
+ */
 export type WaitRequest = { ticks: number } | { until: () => boolean, deadline?: number };
 
 export interface TimelineOptions {
@@ -127,6 +133,7 @@ export class Timeline<A extends unknown[] = []> {
       },
       *until(pred: () => boolean, max?: number) {
         if (pred()) return true;
+        // deadline は時計の時刻（system.currentTick）で持つ。until を呼んだ時点から max tick 後
         const result = yield { until: pred, deadline: max === undefined ? undefined : clock.now() + max };
         return result === true;
       },
@@ -170,7 +177,9 @@ export class Timeline<A extends unknown[] = []> {
     const w = this.waiting;
     if (!this.gen || !w) return;
     const now = this.owner.clock.now();
-    // start() した tick には進めない（start の中で最初の yield まで進んでいるため）
+    // start() した tick には進めない。start() はその場で最初の yield まで進めるので、
+    // 同じ tick のランタイムの処理でもう一度進めると、wait(1) が 0 tick で終わってしまう。
+    // （onTick の中で start() したとき、その直後にランタイムが advance を呼ぶ）
     if (now === this.startedTick) return;
     if ('ticks' in w) {
       if (now >= this.resumeAt) this.step(undefined);

@@ -131,6 +131,24 @@ describe('timeline: lane と止め方', () => {
     expect(log).toEqual(['finally', 'cancel:interrupted', 'other:y']);
     expect(d.seq.lastCancelReason).toBe<CancelReason>('interrupted');
   });
+  it('同じ tick に start と interrupt を続けて呼んでも、決まった順で動く', () => {
+    const d = spawn();
+    const t0 = system.currentTick;
+    expect(d.seq.start()).toBe(true);
+    d.other.interrupt('z', 1);
+    d.seq.interrupt();
+    expect(log).toEqual([`a@${t0}`, 'finally', 'cancel:interrupted', 'other:z', `a@${t0}`]);
+    expect(d.other.running).toBe(false);
+    expect(d.other.lastCancelReason).toBe('interrupted');
+    sim.tick(10);
+    expect(log[log.length - 1]).toBe(`b@${t0 + 10}`);
+  });
+  it('wait(1) はちょうど 1 tick 後に終わる（onTick の中で start したときは、猪のサンプルで確かめている）', () => {
+    const d = spawn();
+    d.other.start('w', 1);
+    sim.tick();
+    expect(log).toEqual(['other:w', 'other-done:w']);
+  });
   it('cancel で止まる。止めたあとは進まない', () => {
     const d = spawn();
     d.seq.start();
@@ -166,7 +184,7 @@ describe('timeline: lane と止め方', () => {
   });
   it('register していないクラスでは start できない（誰も進めないため）', () => {
     const u = Unregistered.of(sim.spawn('tl:unregistered', { x: 0, y: 0, z: 0 }));
-    expect(() => u.go.start()).toThrow('register()');
+    expect(() => u.go.start()).toThrow('Unregistered（tl:unregistered）が register() されていない');
   });
 });
 

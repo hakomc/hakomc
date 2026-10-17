@@ -320,7 +320,7 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
         timelines: this.timelines,
         clock: this.clock,
         ensureDriven: () => {
-          if (!registry().has(id)) throw new Error(`[hakomc/entity] ${id} の timeline を使うには、クラスを register() する（毎 tick 進めるのはフレームワークのため）`);
+          if (!registry().has(id)) throw new Error(`[hakomc/entity] ${this.constructor.name}（${id}）が register() されていないので、timeline を start できない。毎 tick 進めるのはフレームワークなので、定義のファイルで ${this.constructor.name}.register() を呼ぶ`);
         },
       }, body as never, options, this);
       this.timelines.push(t);

@@ -4,6 +4,7 @@
  * このファイルは @minecraft/server を実行時には import しない（プラグインが Node で読み込むため）。
  */
 import type { Entity, EntityDieAfterEvent } from '@minecraft/server';
+import type { CancelReason } from './timeline';
 
 const REGISTRY_KEY = '__hakomc_entity_registry__';
 
@@ -27,7 +28,7 @@ export type LoadReason = 'chunk' | 'startup' | 'late';
 export interface HookTarget {
   readonly entity: Entity;
   /** this.timeline(...) で作った段取り */
-  readonly timelines?: ReadonlyArray<{ readonly running: boolean, advance(): void, cancel(reason: 'died' | 'removed'): void }>;
+  readonly timelines?: ReadonlyArray<{ readonly running: boolean, advance(): void, cancel(reason: CancelReason): void }>;
   onSpawn?(ev: unknown): void;
   onLoad?(reason: LoadReason): void;
   onHurt?(ev: unknown): void;
