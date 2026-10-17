@@ -68,6 +68,7 @@ Existing configs keep working: without `assets/`, the output is the same as befo
 | `resourcePack` | on if some file goes to it | `false` disables it. Or an object: `uuid`, `name` (default `<name> resources`), `description`, `version` (default: the behavior pack's), `manifest` (merged into the generated one) |
 | `mcaddon` | `false` | `true` → `dist/<name>.mcaddon`; a string → that path |
 | `pack` | `'src/pack.ts'` if it exists, else `'src/index.ts'` | Read at build time (with `@minecraft/server` replaced by the simulated one) to generate the JSON and localisation of [`hakomc/entity`](entity.md) entities: those `register()`ed while loading, or the ones in a default-exported `definePack({ ... })`. `false` disables it |
+| `checkRefs` | `true` | After the build, check that what the resource pack's client entities refer to — geometry identifiers, texture paths, animations / animation controllers, render controllers — exists in the pack, and warn when it does not (vanilla references also warn; ignore those) |
 
 ## 日本語
 
@@ -133,3 +134,4 @@ export default defineConfig({
 | `resourcePack` | 入るファイルがあれば有効 | `false` で無効。オブジェクトなら `uuid`・`name`（既定 `<name> resources`）・`description`・`version`（既定はビヘイビアパックと同じ）・`manifest`（生成したものに上書き） |
 | `mcaddon` | `false` | `true` なら `dist/<name>.mcaddon`、文字列ならそのパス |
 | `pack` | `'src/pack.ts'`（あれば）、無ければ `'src/index.ts'` | ビルド時に（`@minecraft/server` を模擬に差し替えて）読み込み、[`hakomc/entity`](entity.md) のエンティティの JSON とローカライズを作る。対象は、読み込み中に `register()` されたもの、または default export した `definePack({ ... })` のもの。`false` で使わない |
+| `checkRefs` | `true` | ビルドの最後に、リソースパックのクライアント側のエンティティ定義が参照しているもの（geometry の識別子・テクスチャのパス・アニメーション / アニメーションコントローラー・レンダーコントローラー）がパックの中にあるか確かめ、無ければ警告する（バニラのものを参照していても警告が出るので、その場合は無視してよい） |

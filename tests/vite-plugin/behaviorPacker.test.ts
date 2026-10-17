@@ -389,3 +389,62 @@ describe('behaviorPacker: register() したエンティティを src/index.ts �
     await expect(build({ name: 'test', uuid: UUID })).rejects.toThrow('hako:same');
   });
 });
+
+describe('behaviorPacker: リソースパックの参照の検査', () => {
+  const clientEntity = (id: string, desc: Record<string, unknown>) => JSON.stringify({
+    format_version: '1.10.0',
+    'minecraft:client_entity': { description: { identifier: id, materials: { default: 'entity_alphatest' }, ...desc } },
+  });
+  const geo = (id: string) => JSON.stringify({ format_version: '1.12.0', 'minecraft:geometry': [{ description: { identifier: id }, bones: [] }] });
+  it('参照しているモデル・テクスチャ・アニメーション・レンダーコントローラーが無ければ警告する', async () => {
+    write('assets/resource/entity/a.entity.json', clientEntity('x:a', {
+      geometry: { default: 'geometry.a', armored: 'geometry.missing' },
+      textures: { default: 'textures/entity/a', other: 'textures/entity/none' },
+      animations: { walk: 'animation.a.walk', idle: 'animation.missing', ctl: 'controller.animation.a' },
+      render_controllers: ['controller.render.default', 'controller.render.a', { 'controller.render.missing': 'q.is_baby' }],
+    }));
+    write('assets/models/entity/a.geo.json', geo('geometry.a'));
+    write('assets/textures/entity/a.png', 'png');
+    // コメントの入った JSON も読める
+    write('assets/resource/animations/a.animation.json', '{\n  // 歩き\n  "format_version": "1.8.0",\n  "animations": { "animation.a.walk": {}, },\n}');
+    write('assets/resource/animation_controllers/a.ac.json', JSON.stringify({ animation_controllers: { 'controller.animation.a': {} } }));
+    write('assets/resource/render_controllers/a.rc.json', JSON.stringify({ render_controllers: { 'controller.render.a': {} } }));
+    const ctx = await build({ name: 'test', uuid: UUID });
+    const warnings = ctx.warn.mock.calls.map((c: any[]) => c[0]);
+    expect(warnings).toHaveLength(4);
+    expect(warnings.join('\n')).toContain('entity/a.entity.json（x:a）: geometry geometry.missing が見つからない');
+    expect(warnings.join('\n')).toContain('テクスチャ textures/entity/none が見つからない');
+    expect(warnings.join('\n')).toContain('アニメーション animation.missing が見つからない');
+    expect(warnings.join('\n')).toContain('レンダーコントローラー controller.render.missing が見つからない');
+  });
+  it('定義から作ったエンティティ（部位の見た目も含む）も確かめる。そろっていれば警告しない', async () => {
+    // beforeEach で一時フォルダに移っているので、元のフォルダ（cwd）から辿る
+    const ENTITY = JSON.stringify(join(cwd, 'core/entity/index.ts'));
+    write('src/index.ts', `
+      import { Part, entity, health } from ${ENTITY};
+      class Horn extends Part('horn', { seat: [0, 2, 1.5], size: [0.5, 0.5], health: 5, hideBone: 'horn' }) {}
+      class Beast extends entity('hako:beast', {
+        components: [health({ value: 10 })],
+        parts: [Horn],
+        client: { geometry: 'geometry.beast', textures: 'textures/entity/beast' },
+      }) {}
+      Beast.register();
+    `);
+    let ctx = await build({ name: 'test', uuid: UUID });
+    let warnings = ctx.warn.mock.calls.map((c: any[]) => c[0]);
+    expect(warnings).toEqual([
+      expect.stringContaining('geometry geometry.beast が見つからない'),
+      expect.stringContaining('テクスチャ textures/entity/beast が見つからない'),
+    ]);
+    write('assets/models/entity/beast.geo.json', geo('geometry.beast'));
+    write('assets/textures/entity/beast.png', 'png');
+    ctx = await build({ name: 'test', uuid: UUID });
+    warnings = ctx.warn.mock.calls.map((c: any[]) => c[0]);
+    expect(warnings).toEqual([]);
+  });
+  it('checkRefs: false で確かめない', async () => {
+    write('assets/resource/entity/a.entity.json', clientEntity('x:a', { geometry: { default: 'geometry.missing' } }));
+    const ctx = await build({ name: 'test', uuid: UUID, checkRefs: false });
+    expect(ctx.warn).not.toHaveBeenCalled();
+  });
+});
