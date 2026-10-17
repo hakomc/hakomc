@@ -514,8 +514,13 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
     onPartBreak?(part: PT): void;
     /** 壊れた部位が restore() で戻った */
     onPartRestore?(part: PT): void;
-    /** 無効にした部位（disable() / disabled: true）が攻撃された。ダメージは入っていない。防いだ音や演出に使う */
-    onPartBlocked?(part: PT, ev: EntityHurtAfterEvent): void;
+    /**
+     * 部位へのダメージを、本体に伝える前に変える。damage は倍率を掛ける前の値。
+     * 返した値に倍率を掛けて本体に伝え、部位の体力も返した値で減る。
+     * 0 を返すとダメージは無効（本体にも部位にも入らず、onPartHurt も呼ばれない）。
+     * 条件を満たすまで叩けない弱点などに使う。壊れた部位には呼ばれない
+     */
+    partDamage?(part: PT, damage: number, ev: EntityHurtAfterEvent): number;
   }
   return Definition;
 }
