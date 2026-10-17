@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { EntityDamageCause, type Entity } from '@minecraft/server';
 import { sim } from '../../../core/testing';
-import { EntityDefinitionError, EntityEvent, Part, entity, health, rideable, type PartClass } from '../../../core/entity';
+import { EntityDefinitionError, EntityEvent, Part, collisionBox, entity, health, rideable, type PartClass } from '../../../core/entity';
 import { registry } from '../../../core/entity/registry';
 
 // ---- サンプル: 背中に弱点がある岩のゴーレム ----
@@ -61,12 +61,72 @@ describe('部位: JSON', () => {
     expect(back.components['minecraft:type_family'].family).toEqual(['hakomc_part', 'golem_part']);
     expect(Object.keys(files)).toEqual(['entities/golem_back.json', 'entities/golem_left_arm.json', 'entities/golem_right_arm.json', 'entities/golem.json']);
   });
+  it('部位の見た目は、空のモデルで何も描かない（本体に client が無くても作る）', () => {
+    const rp = Golem.toFiles().resource as Record<string, any>;
+    expect(Object.keys(rp).sort()).toEqual([
+      'entity/golem_back.entity.json', 'entity/golem_left_arm.entity.json', 'entity/golem_right_arm.entity.json',
+      'models/entity/golem_part.geo.json',
+    ]);
+    expect(rp['entity/golem_back.entity.json']['minecraft:client_entity'].description).toMatchObject({
+      identifier: 'demo:golem_back', geometry: { default: 'geometry.demo_golem_part' },
+    });
+    expect(rp['models/entity/golem_part.geo.json']['minecraft:geometry'][0].bones).toEqual([{ name: 'root', pivot: [0, 0, 0] }]);
+  });
   it('部位を使うときに座席を自分で書く・id が重なる・id の形が違う、はエラー', () => {
     expect(() => entity('demo:x', { parts: [Back], components: [rideable({ seat_count: 1 })] }).toFiles()).toThrow(EntityDefinitionError);
     class Back2 extends Part('back', { seat: [0, 0, 0], size: [1, 1] }) {}
     expect(() => entity('demo:x', { parts: [Back, Back2] }).toFiles()).toThrow('部位の id back が 2 つある');
     class Bad extends Part('Bad-Name', { seat: [0, 0, 0], size: [1, 1] }) {}
     expect(() => entity('demo:x', { parts: [Bad] }).toFiles()).toThrow(EntityDefinitionError);
+  });
+});
+
+describe('部位: ビルド時の警告と、壊れた部位を隠す設定', () => {
+  it('部位の当たり判定が本体の当たり判定に半分以上埋まる向きがあれば警告する（ビルドは止めない）', () => {
+    // 実機で起きた例: 本体の幅 1.6（±0.8）に対し、背中の部位が 0.25 しかはみ出していない
+    class Hump extends Part('hump', { seat: [0, 1.85, -0.65], size: [0.8, 0.7] }) {}
+    class Arm extends Part('arm', { seat: [1.05, 0.5, 0], size: [0.5, 1.6] }) {}
+    const E = entity('demo:buried', { components: [collisionBox({ width: 1.6, height: 2.4 })], parts: [Hump, Arm] });
+    const w = E.toFiles().warnings!;
+    expect(w).toHaveLength(1);
+    expect(w[0]).toMatch(/部位 hump の当たり判定が、本体の当たり判定に最大 \d+% 埋まる/);
+    // 外に出せば警告は出ない
+    class Hump2 extends Part('hump', { seat: [0, 1.75, -1.05], size: [0.7, 0.75] }) {}
+    expect(entity('demo:ok', { components: [collisionBox({ width: 1.2, height: 2.4 })], parts: [Hump2, Arm] }).toFiles().warnings).toEqual([]);
+  });
+  it('hideBone: client_sync のプロパティと、ボーンを隠すレンダーコントローラーを作り、壊れたら本体のプロパティを立てる', () => {
+    class Hump extends Part('hump', { seat: [0, 1.75, -1.05], size: [0.7, 0.75], health: 10, hideBone: 'back_core' }) {}
+    class Beast extends entity('demo:beast', {
+      components: [health({ value: 50 })],
+      parts: [Hump],
+      client: { geometry: 'geometry.beast', textures: 'textures/entity/beast' },
+    }) {}
+    Beast.register();
+    const files = Beast.toFiles() as any;
+    expect(files.behavior['entities/beast.json']['minecraft:entity'].description.properties['demo:part_hump_broken'])
+      .toEqual({ type: 'bool', default: false, client_sync: true });
+    expect(files.resource['entity/beast.entity.json']['minecraft:client_entity'].description.render_controllers).toEqual(['controller.render.demo_beast']);
+    expect(files.resource['render_controllers/beast.render_controllers.json'].render_controllers['controller.render.demo_beast'].part_visibility)
+      .toEqual([{ '*': true }, { back_core: '!q.property(\'demo:part_hump_broken\')' }]);
+    sim.loadEntityClass(Beast);
+    const e = sim.spawn('demo:beast', { x: 0, y: 0, z: 0 });
+    const b = Beast.of(e);
+    b.part(Hump).break();
+    sim.tick();
+    expect(e.getProperty('demo:part_hump_broken')).toBe(true);
+    b.part(Hump).restore();
+    sim.tick();
+    expect(e.getProperty('demo:part_hump_broken')).toBe(false);
+  });
+  it('hideBone: renderControllers を自分で書いていれば、足す式を警告で知らせる', () => {
+    class Hump extends Part('hump', { seat: [0, 2, -2], size: [1, 1], health: 10, hideBone: ['a', 'b'] }) {}
+    const E = entity('demo:own_rc', {
+      parts: [Hump],
+      client: { geometry: 'g', textures: 't', renderControllers: ['controller.render.mine'] },
+    });
+    const f = E.toFiles();
+    expect(Object.keys(f.resource).some((k) => k.startsWith('render_controllers/'))).toBe(false);
+    expect(f.warnings!.join('\n')).toContain(`{"a":"!q.property('demo:part_hump_broken')"},{"b":"!q.property('demo:part_hump_broken')"}`);
   });
 });
 

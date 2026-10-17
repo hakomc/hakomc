@@ -17,7 +17,7 @@ export const definePack = (def: PackDefinition): PackDefinition => def;
 
 /** パックの定義から、書き出すファイルを全部作る */
 export function buildPack(def: PackDefinition): PackFiles {
-  const out: PackFiles = { behavior: {}, resource: {}, lang: {} };
+  const out: PackFiles = { behavior: {}, resource: {}, lang: {}, warnings: [] };
   const seen = new Map<string, EntityClass>();
   for (const e of def.entities ?? []) {
     const prev = seen.get(e.id);
@@ -32,6 +32,7 @@ export function buildPack(def: PackDefinition): PackFiles {
       }
     }
     for (const [code, lines] of Object.entries(files.lang)) (out.lang[code] ??= []).push(...lines);
+    out.warnings!.push(...(files.warnings ?? []));
   }
   return out;
 }
