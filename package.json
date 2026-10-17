@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "gen:testing": "node scripts/gen-testing-stubs.mjs"
+    "gen:testing": "node scripts/gen-testing-stubs.mjs",
+    "gen:entity": "node scripts/gen-entity-components.mjs"
   },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -71,6 +72,11 @@
       "import": "./dist/vite-plugin/index.js",
       "default": "./dist/vite-plugin/index.js"
     },
+    "./entity": {
+      "types": "./dist/core/entity/index.d.ts",
+      "import": "./dist/entity/index.js",
+      "default": "./dist/entity/index.js"
+    },
     "./testing": {
       "types": "./dist/core/testing/index.d.ts",
       "import": "./dist/testing/index.js",
@@ -105,5 +111,8 @@
     "vite": "^7.1.7",
     "vite-plugin-dts": "^5.0.3",
     "vitest": "^3.2.7"
+  },
+  "dependencies": {
+    "@minecraft/bedrock-schemas": "^1.26.50"
   }
 }

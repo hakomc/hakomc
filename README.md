@@ -20,6 +20,7 @@ This repository is the core source of the framework side.
 - [Core (`hakomc`): Timer / Net / Debug](docs/api/core.md)
 - [Form (`hakomc/form/component`)](docs/api/form.md)
 - [DDUI (`hakomc/form/ddui/component`)](docs/api/ddui.md)
+- [Entity (`hakomc/entity`)](docs/api/entity.md)
 - [Testing (`hakomc/testing`)](docs/api/testing.md)
 - [Vite Plugin (`hakomc/vite-plugin`): behaviorPacker](docs/api/vite-plugin.md)
 
@@ -47,6 +48,7 @@ ScriptAPIを使用したライブラリやプラグイン作成をサポート�
 - [Core (`hakomc`): Timer / Net / Debug](docs/api/core.md)
 - [Form (`hakomc/form/component`)](docs/api/form.md)
 - [DDUI (`hakomc/form/ddui/component`)](docs/api/ddui.md)
+- [Entity (`hakomc/entity`)](docs/api/entity.md)
 - [Testing (`hakomc/testing`)](docs/api/testing.md)
 - [Vite Plugin (`hakomc/vite-plugin`): behaviorPacker](docs/api/vite-plugin.md)
 

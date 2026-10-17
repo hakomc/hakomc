@@ -3,7 +3,9 @@ import type { OutputBundle, NormalizedOutputOptions } from 'rollup';
 import { resolve, relative, join } from 'path';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
-import { stableUuid, listFiles, cleanDir, writeZip, routeAssets, copyRouted, ASSET_ROUTES } from './packFiles';
+import { stableUuid, listFiles, cleanDir, writeZip, routeAssets, copyRouted, ASSET_ROUTES, writeJsonFiles, writeLang } from './packFiles';
+import { loadPack } from './packLoader';
+import type { PackFiles } from '../core/entity/entity';
 
 type ManifestStub = {
   format_version?: number,
@@ -72,6 +74,11 @@ type PluginConfig = {
   resourcePack?: ResourcePackConfig | false,
   /** true なら dist/<name>.mcaddon、文字列ならそのパスに .mcaddon を書き出す */
   mcaddon?: boolean | string,
+  /**
+   * エンティティなどの定義（hakomc/entity）を default export するファイル。既定 'src/pack.ts'（あれば）。
+   * ビルド時に読み込み、BP / RP の JSON とローカライズを作る。false で使わない。
+   */
+  pack?: string | false,
 };
 
 const DIST_BP = 'dist/behavior_pack';
@@ -137,6 +144,7 @@ const behaviorPacker = ({
   assetsDir = 'assets',
   resourcePack,
   mcaddon = false,
+  pack,
 }: PluginConfig = {
   name: 'my first plugin',
   description: '',
@@ -153,14 +161,27 @@ const behaviorPacker = ({
   const assetsPath = resolve(process.cwd(), assetsDir);
   const rpUUIDFor = (cfg: ResourcePackConfig) => cfg.uuid ?? derive('resource_pack');
   const rpVersion = (resourcePack || undefined)?.version ?? version;
+  const packEntry = pack === false ? undefined : pack ?? (fs.existsSync(resolve(process.cwd(), 'src/pack.ts')) ? 'src/pack.ts' : undefined);
+  let packFiles: PackFiles | undefined;
 
   return {
   name: 'BehaviorPacker',
 
-  buildStart() {
+  async buildStart() {
     // vite build --watch のとき、assets の変更でも作り直す。
     // ファイルではなくフォルダごと登録する（後から足したファイルも拾うため。フォルダがまだ無くても、作られれば拾う）
     this.addWatchFile(assetsPath);
+    // 定義（src/pack.ts）を読み込んで JSON を作る。定義から辿ったファイルも監視する
+    packFiles = undefined;
+    if (packEntry) {
+      try {
+        const loaded = await loadPack(packEntry);
+        packFiles = loaded.files;
+        for (const f of loaded.watchFiles) this.addWatchFile(f);
+      } catch (e) {
+        this.error(`${packEntry} の読み込みに失敗: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
   },
   
   config: () => {
@@ -252,12 +273,15 @@ globalThis.__SOURCE_MAP__ = ${JSON.stringify(embeddedSourceMap)};
     if (generated.length) this.warn(`${where} の ${generated.join(', ')} は生成物と重なるのでコピーしない（manifest は manifest オプションで上書きできる）`);
     if (unknown.length) this.warn(`${where} の ${unknown.join(', ')} は入れる先のパックが分からないのでコピーしない。${Object.keys(ASSET_ROUTES).join('/')}/ のどれかに置くか、behavior/ か resource/ の下に置く`);
     // 既定では、リソースパックに入るファイルがあるときだけ作る
+    const genBp = Object.keys(packFiles?.behavior ?? {}).length;
+    const genRp = Object.keys(packFiles?.resource ?? {}).length + Object.keys(packFiles?.lang ?? {}).length;
     const rpConfig: ResourcePackConfig | undefined = resourcePack === false
       ? undefined
-      : resourcePack ?? (assets.rp.length ? {} : undefined);
+      : resourcePack ?? (assets.rp.length || genRp ? {} : undefined);
     if (resourcePack === false && assets.rp.length) this.warn(`resourcePack: false なので、${where} のリソースパック用のファイル（${assets.rp.length} 個）は使わない`);
+    if (resourcePack === false && genRp) this.warn(`resourcePack: false なので、${packEntry} から作った見た目・ローカライズは使わない`);
     const rpUUID = rpConfig ? rpUUIDFor(rpConfig) : undefined;
-    const hasBpAssets = assets.bp.length > 0;
+    const hasBpAssets = assets.bp.length > 0 || genBp > 0;
     const manifestStub: ManifestStub = {
       'format_version': 2,
       'header': {
@@ -301,6 +325,12 @@ globalThis.__SOURCE_MAP__ = ${JSON.stringify(embeddedSourceMap)};
     // ビヘイビアパックの素材（scripts は vite の出力なので残す）
     cleanDir(DIST_BP, ['scripts']);
     copyRouted(assets.bp, DIST_BP);
+    if (packFiles) {
+      // assets に同じパスのファイルがあれば、定義から作ったほうで上書きする（警告を出す）
+      const clash = Object.keys(packFiles.behavior).filter((p) => fs.existsSync(join(DIST_BP, p)));
+      if (clash.length) this.warn(`${clash.join(', ')} は ${packEntry} の定義から作ったもので上書きする（assets 側を消してください）`);
+      writeJsonFiles(DIST_BP, packFiles.behavior);
+    }
     fs.writeFileSync(join(DIST_BP, 'manifest.json'), JSON.stringify(finalManifest, null, 2));
 
     // リソースパックは全て生成物なので、毎回作り直す（無効にしたら消す）
@@ -308,6 +338,12 @@ globalThis.__SOURCE_MAP__ = ${JSON.stringify(embeddedSourceMap)};
     if (rpConfig && rpUUID) {
       fs.mkdirSync(DIST_RP, { recursive: true });
       copyRouted(assets.rp, DIST_RP);
+      if (packFiles) {
+        const clash = Object.keys(packFiles.resource).filter((p) => fs.existsSync(join(DIST_RP, p)));
+        if (clash.length) this.warn(`${clash.join(', ')} は ${packEntry} の定義から作ったもので上書きする（assets 側を消してください）`);
+        writeJsonFiles(DIST_RP, packFiles.resource);
+        writeLang(DIST_RP, packFiles.lang);
+      }
       const rpStub: ManifestStub = {
         'format_version': 2,
         'header': {

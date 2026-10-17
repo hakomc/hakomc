@@ -22,8 +22,8 @@ const exists = (rel: string) => fs.existsSync(join(tmp, rel));
 const build = async (opts: Parameters<typeof behaviorPacker>[0]) => {
   const plugin = behaviorPacker(opts) as any;
   write('dist/behavior_pack/scripts/index.js', 'console.log(1);');
-  const ctx = { warn: vi.fn(), addWatchFile: vi.fn() };
-  plugin.buildStart.call(ctx);
+  const ctx = { warn: vi.fn(), addWatchFile: vi.fn(), error: (m: string) => { throw new Error(m); } };
+  await plugin.buildStart.call(ctx);
   await plugin.writeBundle.call(ctx, {}, { 'index.js': { type: 'chunk', isEntry: true, fileName: 'index.js' } });
   return ctx;
 };
@@ -250,5 +250,70 @@ describe('behaviorPacker: .mcaddon', () => {
     const out = execFileSync('unzip', ['-t', join(tmp, 'dist/zip.mcaddon')]).toString();
     expect(out).toContain('No errors detected');
     expect(readZip(join(tmp, 'dist/zip.mcaddon'))['resource_pack/texts/ja_JP.lang']).toBe('タイトル=モルグレイヴ');
+  });
+});
+
+describe('behaviorPacker: 定義（src/pack.ts）から JSON を作る', () => {
+  const ENTITY = JSON.stringify(join(cwd0(), 'core/entity/index.ts'));
+  function cwd0() { return process.cwd(); }
+  const writePack = () => {
+    write('src/boss.ts', `
+      import { world } from '@minecraft/server';
+      import { BoolProperty, ComponentGroup, EntityEvent, entity, health, movement, set, timer, type Component } from ${ENTITY};
+      class IsAngry extends BoolProperty('is_angry', false, { client: true }) {}
+      class Angry extends ComponentGroup {
+        components: Component[] = [movement({ value: 0.35 }), timer({ time: 30, time_down_event: Calm })];
+      }
+      class Enrage extends EntityEvent { static readonly id = 'enrage'; add = [Angry]; set = [set(IsAngry, true)]; }
+      class Calm extends EntityEvent { static readonly id = 'calm'; remove = [Angry]; set = [set(IsAngry, false)]; }
+      export class Boss extends entity('hako:boss', {
+        name: { en_US: 'Boss', ja_JP: 'ボス' },
+        properties: [IsAngry],
+        components: [health({ value: 600 })],
+        events: [Enrage],
+        client: { geometry: 'geometry.boss', textures: 'textures/entity/boss' },
+      }) {}
+      // 振る舞いのコードも一緒に読み込まれる（@minecraft/server は模擬に差し替わる）
+      world.afterEvents.entityHurt.subscribe(() => {});
+    `);
+    write('src/pack.ts', `
+      import { definePack } from ${ENTITY};
+      import { Boss } from './boss';
+      export default definePack({ entities: [Boss] });
+    `);
+  };
+  it('BP の entities、RP の entity、ローカライズを書き出し、RP を有効にする', async () => {
+    writePack();
+    write('assets/resource/texts/ja_JP.lang', 'item.hako:gem.name=宝石');
+    await build({ name: 'test', uuid: UUID });
+    const bp = json('dist/behavior_pack/entities/boss.json')['minecraft:entity'];
+    expect(bp.description.properties['hako:is_angry'].type).toBe('bool');
+    expect(bp.component_groups.angry['minecraft:timer'].time_down_event).toBe('hako:calm');
+    expect(json('dist/resource_pack/entity/boss.entity.json')['minecraft:client_entity'].description.geometry).toEqual({ default: 'geometry.boss' });
+    expect(read('dist/resource_pack/texts/ja_JP.lang')).toBe('item.hako:gem.name=宝石\nentity.hako:boss.name=ボス\n');
+    expect(read('dist/resource_pack/texts/en_US.lang')).toBe('entity.hako:boss.name=Boss\n');
+    expect(json('dist/resource_pack/texts/languages.json')).toEqual(['en_US', 'ja_JP']);
+    // BP に data モジュール、BP → RP の依存
+    const m = json('dist/behavior_pack/manifest.json');
+    expect(m.modules.map((x: any) => x.type)).toEqual(['script', 'data']);
+    expect(m.dependencies.some((d: any) => d.uuid)).toBe(true);
+  });
+  it('watch 用に、pack.ts から辿ったファイルも監視する', async () => {
+    writePack();
+    const ctx = await build({ name: 'test', uuid: UUID });
+    const watched = ctx.addWatchFile.mock.calls.map((c: any[]) => c[0]);
+    expect(watched).toEqual(expect.arrayContaining([join(tmp, 'src/pack.ts'), join(tmp, 'src/boss.ts')]));
+  });
+  it('定義の間違いはビルドを止める', async () => {
+    write('src/pack.ts', `
+      import { definePack, entity } from ${ENTITY};
+      export default definePack({ entities: [entity('hako:dup'), entity('hako:dup')] });
+    `);
+    await expect(build({ name: 'test', uuid: UUID })).rejects.toThrow('hako:dup が 2 つ定義されている');
+  });
+  it('pack: false なら読み込まない', async () => {
+    writePack();
+    await build({ name: 'test', uuid: UUID, pack: false });
+    expect(exists('dist/behavior_pack/entities')).toBe(false);
   });
 });

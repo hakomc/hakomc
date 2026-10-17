@@ -168,3 +168,33 @@ export const copyRouted = (files: RoutedFile[], dest: string) => {
     fs.copyFileSync(src, to);
   }
 };
+
+/** パック内のパス → JSON を書き出す */
+export const writeJsonFiles = (dest: string, files: Record<string, unknown>) => {
+  for (const [rel, json] of Object.entries(files)) {
+    const to = join(dest, rel);
+    fs.mkdirSync(join(to, '..'), { recursive: true });
+    fs.writeFileSync(to, JSON.stringify(json, null, 2));
+  }
+};
+
+/**
+ * ローカライズの行を texts/<言語>.lang に足し、texts/languages.json にその言語を入れる。
+ * assets から置いた .lang があれば、その後ろに足す。
+ */
+export const writeLang = (packDir: string, lang: Record<string, string[]>) => {
+  const codes = Object.keys(lang).filter((c) => lang[c].length);
+  if (!codes.length) return;
+  const texts = join(packDir, 'texts');
+  fs.mkdirSync(texts, { recursive: true });
+  for (const code of codes) {
+    const file = join(texts, `${code}.lang`);
+    const before = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+    const sep = before && !before.endsWith('\n') ? '\n' : '';
+    fs.writeFileSync(file, `${before}${sep}${lang[code].join('\n')}\n`);
+  }
+  const listFile = join(texts, 'languages.json');
+  const list: string[] = fs.existsSync(listFile) ? JSON.parse(fs.readFileSync(listFile, 'utf8')) : [];
+  for (const code of codes) if (!list.includes(code)) list.push(code);
+  fs.writeFileSync(listFile, JSON.stringify(list, null, 2));
+};
