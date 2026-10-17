@@ -106,6 +106,19 @@ export function describe(entry: Entry, obj: HookTarget): string {
   ].filter(Boolean).join(' | ');
 }
 
+/**
+ * 次の tick に、まだいる対象にだけ実行する。全部消えていたら、打った人にチャットで知らせる
+ * （コマンドの結果はその場で返すので、あとから失敗にはできないため）
+ */
+function later(origin: CustomCommandOrigin, list: Array<{ entry: Entry, obj: HookTarget }>, fn: (t: { entry: Entry, obj: HookTarget }) => void) {
+  const player = originPlayer(origin);
+  system.run(() => {
+    const alive = list.filter(({ obj }) => isValid(obj.entity));
+    for (const t of alive) fn(t);
+    if (!alive.length && player && isValid(player)) player.sendMessage('§c[hakomc] 対象が、実行する前に消えていた（何もしていない）');
+  });
+}
+
 let installed = false;
 
 /** 起動時にコマンドを登録する（register() から呼ばれる） */
@@ -141,20 +154,18 @@ function registerAll(reg: CustomCommandRegistry) {
       const list = targets(origin, sel, (en) => timelines.get(en.cls.id)?.includes(name) ?? false);
       if (!list.length) return fail(`timeline ${name} を持つエンティティが近くにいない`);
       const player = originPlayer(origin);
-      system.run(() => {
-        for (const { obj } of list) if (isValid(obj.entity)) ((obj as unknown as Record<string, Timeline<unknown[]>>)[name]).interrupt(...(player ? [player] : []));
-      });
+      later(origin, list, ({ obj }) => ((obj as unknown as Record<string, Timeline<unknown[]>>)[name]).interrupt(...(player ? [player] : [])));
       return ok(`${list.map(({ entry }) => entry.cls.name).join(', ')}: ${name} を始める`);
     });
   }
 
-  reg.registerCommand({ ...base, name: 'hakomc:stop', description: 'hakomc: timeline を全部止める', optionalParameters: [target] },
+  if (allTimelines.length) reg.registerCommand({ ...base, name: 'hakomc:stop', description: 'hakomc: timeline を全部止める', optionalParameters: [target] },
     (origin, sel?: Entity[]) => {
       // 対象を省いたときは、timeline が動いている中でいちばん近くの個体
       const list = targets(origin, sel, (_en, obj) => sel !== undefined || (obj.timelines ?? []).some((t) => t.running));
       if (!list.length) return fail('近くに、timeline が動いているエンティティがいない');
-      system.run(() => {
-        for (const { obj } of list) for (const t of obj.timelines ?? []) (t as Timeline).cancel();
+      later(origin, list, ({ obj }) => {
+        for (const t of obj.timelines ?? []) (t as Timeline).cancel();
       });
       return ok(`${list.length} 体の timeline を止める`);
     });
@@ -169,13 +180,11 @@ function registerAll(reg: CustomCommandRegistry) {
     }, (origin, id: string, action: string, sel?: Entity[]) => {
       const list = targets(origin, sel, (en) => partsOf(en.cls).some((p) => p.id === id && p.options.health !== undefined));
       if (!list.length) return fail(`壊せる部位 ${id}（health のある部位）を持つエンティティが近くにいない`);
-      system.run(() => {
-        for (const { entry, obj } of list) {
-          const part = partsOf(entry.cls).find((p) => p.id === id)!;
-          const h = (obj as unknown as { part(p: PartClass): { break(): void, restore(): void } }).part(part);
-          if (action === 'break') h.break();
-          else h.restore();
-        }
+      later(origin, list, ({ entry, obj }) => {
+        const part = partsOf(entry.cls).find((p) => p.id === id)!;
+        const h = (obj as unknown as { part(p: PartClass): { break(): void, restore(): void } }).part(part);
+        if (action === 'break') h.break();
+        else h.restore();
       });
       return ok(`部位 ${id} を ${action === 'break' ? '壊す' : '戻す'}${list.some(({ entry }) => partsOf(entry.cls).some((p) => p.id === id && hiddenBones(p).length)) ? '（hideBone あり）' : ''}`);
     });
@@ -191,9 +200,7 @@ function registerAll(reg: CustomCommandRegistry) {
       const list = targets(origin, sel, (en) => propsOf(en.cls).includes(name));
       if (!list.length) return fail(`プロパティ ${name} を持つエンティティが近くにいない`);
       const value: boolean | number | string = raw === 'true' ? true : raw === 'false' ? false : raw !== '' && !Number.isNaN(Number(raw)) ? Number(raw) : raw;
-      system.run(() => {
-        for (const { obj } of list) if (isValid(obj.entity)) obj.entity.setProperty(name, value);
-      });
+      later(origin, list, ({ obj }) => obj.entity.setProperty(name, value));
       return ok(`${name} = ${JSON.stringify(value)}`);
     });
   }
@@ -208,11 +215,7 @@ function registerAll(reg: CustomCommandRegistry) {
       const list = targets(origin, sel, (en) => defs.some((d) => d.cls === en.cls));
       if (!list.length) return fail(`コマンド ${name} を持つエンティティが近くにいない`);
       const ctx: CommandContext = { player: originPlayer(origin), origin };
-      system.run(() => {
-        for (const { entry, obj } of list) {
-          if (isValid(obj.entity)) defs.find((d) => d.cls === entry.cls)!.fn(obj as never, ctx);
-        }
-      });
+      later(origin, list, ({ entry, obj }) => defs.find((d) => d.cls === entry.cls)!.fn(obj as never, ctx));
       return ok(`${list.map(({ entry }) => entry.cls.name).join(', ')}: ${name}`);
     });
   }

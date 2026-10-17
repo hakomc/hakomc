@@ -100,6 +100,14 @@ describe('デバッグ用のコマンド', () => {
     expect(log).toEqual(['enrage by Steve']);
     expect(b.getProperty('cmd:mode')).toBe('angry');
   });
+  it('実行する前（次の tick まで）に対象が消えていたら、打った人にチャットで知らせる', () => {
+    const b = sim.spawn('cmd:beast', { x: 2, y: 0, z: 0 });
+    ok(sim.command('/hakomc:run roar', { player }));
+    b.remove();
+    sim.tick();
+    expect(log).toEqual([]);
+    expect(sim.logs('message').map((l) => l.message)).toEqual(['§c[hakomc] 対象が、実行する前に消えていた（何もしていない）']);
+  });
   it('対象がいなければ失敗を返す（32 ブロックより遠い個体は対象にならない）', () => {
     sim.spawn('cmd:beast', { x: 40, y: 0, z: 0 });
     ng(sim.command('/hakomc:info', { player }));
