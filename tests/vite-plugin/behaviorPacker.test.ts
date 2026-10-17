@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { join } from 'node:path';
-import { inflateRawSync } from 'node:zlib';
+import { execFileSync } from 'node:child_process';
+import { crc32, inflateRawSync } from 'node:zlib';
 import behaviorPacker from '../../vite-plugin/behaviorPacker';
 
 const UUID = '82b9174d-ea3d-42ae-986c-b42ce3644760';
@@ -27,21 +28,52 @@ const build = async (opts: Parameters<typeof behaviorPacker>[0]) => {
   return ctx;
 };
 
-/** .mcaddon（ZIP）の中身を読む。テスト用の最小実装 */
+/**
+ * .mcaddon（ZIP）を、末尾のセントラルディレクトリから読む（実際の unzip と同じ読み方）。
+ * ローカルヘッダとセントラルヘッダの CRC・サイズが一致し、中身の CRC が合っていることも確かめる。
+ */
 const readZip = (file: string) => {
   const buf = fs.readFileSync(file);
+  const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  expect(eocd).toBe(buf.length - 22);
+  const count = buf.readUInt16LE(eocd + 10);
+  let p = buf.readUInt32LE(eocd + 16);
+  expect(p + buf.readUInt32LE(eocd + 12)).toBe(eocd);
   const files: Record<string, string> = {};
-  let p = 0;
-  while (buf.readUInt32LE(p) === 0x04034b50) {
-    const method = buf.readUInt16LE(p + 8), size = buf.readUInt32LE(p + 18);
-    const nameLen = buf.readUInt16LE(p + 26), extra = buf.readUInt16LE(p + 28);
-    const name = buf.subarray(p + 30, p + 30 + nameLen).toString('utf8');
-    const body = buf.subarray(p + 30 + nameLen + extra, p + 30 + nameLen + extra + size);
-    files[name] = (method === 8 ? inflateRawSync(body) : body).toString('utf8');
-    p += 30 + nameLen + extra + size;
+  for (let i = 0; i < count; i++) {
+    expect(buf.readUInt32LE(p)).toBe(0x02014b50);
+    const method = buf.readUInt16LE(p + 10), date = buf.readUInt16LE(p + 14), crc = buf.readUInt32LE(p + 16);
+    const size = buf.readUInt32LE(p + 20), rawSize = buf.readUInt32LE(p + 24);
+    const nameLen = buf.readUInt16LE(p + 28), extraLen = buf.readUInt16LE(p + 30), commentLen = buf.readUInt16LE(p + 32);
+    const local = buf.readUInt32LE(p + 42);
+    const name = buf.subarray(p + 46, p + 46 + nameLen).toString('utf8');
+    // ローカルヘッダも同じ値を持つこと
+    expect(buf.readUInt32LE(local)).toBe(0x04034b50);
+    expect([buf.readUInt16LE(local + 8), buf.readUInt16LE(local + 12), buf.readUInt32LE(local + 14), buf.readUInt32LE(local + 18), buf.readUInt32LE(local + 22)])
+      .toEqual([method, date, crc, size, rawSize]);
+    // 日付は 1980-01-01 以降の正しい値（月・日が 0 ではない）
+    expect((date >> 5) & 0x0f).toBeGreaterThan(0);
+    expect(date & 0x1f).toBeGreaterThan(0);
+    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+    const body = buf.subarray(start, start + size);
+    const data = method === 8 ? inflateRawSync(body) : body;
+    expect(data.length).toBe(rawSize);
+    expect(crc32(data)).toBe(crc);
+    files[name] = data.toString('utf8');
+    p += 46 + nameLen + extraLen + commentLen;
   }
   return files;
 };
+
+/** unzip コマンドがあれば、それでも壊れていないか確かめる */
+const hasUnzip = (() => {
+  try {
+    execFileSync('unzip', ['-v'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 beforeEach(() => {
   cwd = process.cwd();
@@ -144,12 +176,11 @@ describe('behaviorPacker: assets の振り分け', () => {
     expect(exists('dist/resource_pack/textures/old.png')).toBe(false);
     expect(exists('dist/resource_pack/textures/new.png')).toBe(true);
   });
-  it('watch 用に assets のファイルを監視対象にする', async () => {
-    write('assets/behavior/entities/boss.json');
-    write('assets/textures/boss.png', 'png');
+  it('watch 用に assets フォルダごと監視対象にする（後から足したファイルも拾うため。まだ無くても登録する）', async () => {
     const ctx = await build({ name: 'test', uuid: UUID });
-    const watched = ctx.addWatchFile.mock.calls.map((c: any[]) => c[0]);
-    expect(watched).toEqual(expect.arrayContaining([join(tmp, 'assets/behavior/entities/boss.json'), join(tmp, 'assets/textures/boss.png')]));
+    expect(ctx.addWatchFile.mock.calls.map((c: any[]) => c[0])).toEqual([join(tmp, 'assets')]);
+    const ctx2 = await build({ name: 'test', uuid: UUID, assetsDir: 'art' });
+    expect(ctx2.addWatchFile.mock.calls.map((c: any[]) => c[0])).toEqual([join(tmp, 'art')]);
   });
   it('assetsDir で場所を変えられる', async () => {
     write('art/textures/a.png', 'png');
@@ -210,5 +241,14 @@ describe('behaviorPacker: .mcaddon', () => {
     ]);
     expect(files['behavior_pack/entities/boss.json']).toBe('{"boss":1}');
     expect(JSON.parse(files['resource_pack/manifest.json']).dependencies[0].uuid).toBe(UUID);
+  });
+  it.skipIf(!hasUnzip)('unzip -t でも壊れていない（圧縮するファイルとしないファイルの両方）', async () => {
+    write('assets/behavior/entities/big.json', JSON.stringify({ list: Array.from({ length: 500 }, (_, i) => `entry-${i}`) }));
+    write('assets/textures/tiny.png', 'p');
+    write('assets/resource/texts/ja_JP.lang', 'タイトル=モルグレイヴ');
+    await build({ name: 'zip', uuid: UUID, mcaddon: true });
+    const out = execFileSync('unzip', ['-t', join(tmp, 'dist/zip.mcaddon')]).toString();
+    expect(out).toContain('No errors detected');
+    expect(readZip(join(tmp, 'dist/zip.mcaddon'))['resource_pack/texts/ja_JP.lang']).toBe('タイトル=モルグレイヴ');
   });
 });

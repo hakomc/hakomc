@@ -158,8 +158,9 @@ const behaviorPacker = ({
   name: 'BehaviorPacker',
 
   buildStart() {
-    // vite build --watch のとき、素材フォルダの変更でも作り直す
-    for (const f of listFiles(assetsPath)) this.addWatchFile(f);
+    // vite build --watch のとき、assets の変更でも作り直す。
+    // ファイルではなくフォルダごと登録する（後から足したファイルも拾うため。フォルダがまだ無くても、作られれば拾う）
+    this.addWatchFile(assetsPath);
   },
   
   config: () => {

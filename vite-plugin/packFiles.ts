@@ -46,6 +46,10 @@ const CRC_TABLE = (() => {
   return t;
 })();
 
+/** ZIP の日付（MS-DOS 形式）。0 は月日が 0 の不正な日付になるので、1980-01-01 00:00 にする */
+const DOS_TIME = 0;
+const DOS_DATE = (0 << 9) | (1 << 5) | 1;
+
 const crc32 = (buf: Buffer) => {
   let c = 0xffffffff;
   for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
@@ -73,7 +77,8 @@ export const writeZip = (outPath: string, entries: Array<{ path: string, data: B
     local.writeUInt16LE(20, 4);       // version needed
     local.writeUInt16LE(0x0800, 6);   // flags: UTF-8 names
     local.writeUInt16LE(method, 8);
-    local.writeUInt32LE(0, 10);       // time / date
+    local.writeUInt16LE(DOS_TIME, 10);
+    local.writeUInt16LE(DOS_DATE, 12);
     local.writeUInt32LE(crc, 14);
     local.writeUInt32LE(body.length, 18);
     local.writeUInt32LE(data.length, 22);
@@ -87,7 +92,8 @@ export const writeZip = (outPath: string, entries: Array<{ path: string, data: B
     central.writeUInt16LE(20, 6);
     central.writeUInt16LE(0x0800, 8);
     central.writeUInt16LE(method, 10);
-    central.writeUInt32LE(0, 12);
+    central.writeUInt16LE(DOS_TIME, 12);
+    central.writeUInt16LE(DOS_DATE, 14);
     central.writeUInt32LE(crc, 16);
     central.writeUInt32LE(body.length, 20);
     central.writeUInt32LE(data.length, 24);
