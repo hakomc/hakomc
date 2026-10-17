@@ -163,6 +163,16 @@ export const sim = {
     return id;
   },
 
+  /**
+   * hakomc/entity で定義したクラスの JSON（部位のエンティティも含む）を、まとめて読み込む。
+   * @returns 読み込んだエンティティの識別子
+   */
+  loadEntityClass(cls: { toFiles(): { behavior: Record<string, unknown> } }): string[] {
+    return Object.values(cls.toFiles().behavior)
+      .filter((json: any) => json?.['minecraft:entity'])
+      .map((json) => this.loadEntityJson(json));
+  },
+
   dimension(id = 'overworld'): Dimension { return getDimension(id) as unknown as Dimension; },
 
   /** エンティティを出す。戻り値は本物の Entity 型（スクリプトの関数にそのまま渡せる） */

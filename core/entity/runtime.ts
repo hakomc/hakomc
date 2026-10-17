@@ -7,6 +7,7 @@
  */
 import { system, world, type Entity } from '@minecraft/server';
 import { registry, type Entry, type HookTarget, type LastKnown, type LoadReason, type RegisteredClass } from './registry';
+import { handlePartGone, handlePartHurt, removeParts, sweepOrphanParts, syncParts } from './parts-runtime';
 
 export { registry, resetRegistry, type LastKnown, type LoadReason, type RegisteredClass } from './registry';
 
@@ -58,6 +59,15 @@ function ensure(entry: Entry, e: Entity, how: LoadReason | { spawn: unknown }): 
   if (existing && (existing.entity === e || isValid(existing.entity))) return existing;
   const obj = new entry.cls(e);
   entry.instances.set(e.id, obj);
+  // 部位は、フックより先に座席に乗せておく（onSpawn などで this.part(…).entity を使えるように）
+  try {
+    syncParts(entry, obj);
+  } catch {
+    // before イベントの中など、エンティティを出せない場面では次の tick に回す
+    system.run(() => {
+      if (isValid(obj.entity)) syncParts(entry, obj);
+    });
+  }
   if (typeof how === 'object') obj.onSpawn?.(how.spawn);
   else obj.onLoad?.(how);
   return obj;
@@ -141,6 +151,8 @@ function install() {
     if (entry) ensure(entry, ev.entity, 'chunk');
   });
   after.entityHurt.subscribe((ev) => {
+    // 部位へのダメージは本体に伝える
+    if (handlePartHurt(ev, (en, body) => ensure(en, body, 'late'))) return;
     const entry = entryOf(ev.hurtEntity);
     if (entry) ensure(entry, ev.hurtEntity, 'late').onHurt?.(ev);
   });
@@ -161,6 +173,7 @@ function install() {
     } catch {
       return;
     }
+    if (handlePartGone(typeId, (en, body) => ensure(en, body, 'late'))) return;
     const entry = registry().get(typeId);
     const obj = entry?.instances.get(id);
     if (!entry || !obj) return;
@@ -170,6 +183,7 @@ function install() {
       cancelTimelines(obj, 'died');
       obj.onDie?.(ev, last);
     } finally {
+      removeParts(obj);
       let valid = false;
       try {
         valid = ev.deadEntity.isValid;
@@ -189,6 +203,7 @@ function install() {
     if (obj?.timelines?.some((t) => t.running)) system.run(() => cancelTimelines(obj, 'removed'));
   });
   after.entityRemove.subscribe((ev) => {
+    if (handlePartGone(ev.typeId, (en, body) => ensure(en, body, 'late'))) return;
     const entry = registry().get(ev.typeId);
     if (entry) forget(entry, ev.removedEntityId);
   });
@@ -196,6 +211,9 @@ function install() {
   world.afterEvents.worldLoad.subscribe(() => scan());
   // /reload のときなど worldLoad が来ない場合に備えて、最初の tick でも探す（二重には作らない）
   system.run(() => scan());
+
+  // 本体のいない部位の見回り
+  system.runInterval(() => sweepOrphanParts(), 40);
 
   system.runInterval(() => {
     const errors: unknown[] = [];

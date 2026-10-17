@@ -124,6 +124,39 @@ class Boar extends entity('demo:boar', { … }) {
 - An exception stops only that timeline (reason `'error'`); other entities keep going.
 - Why generators instead of `async`/`await`: they run synchronously inside the tick, so the timing is exact and they can be stopped at any point. An `await` continues after the promise settles, which makes the tick it runs on hard to control (and tests would need `sim.tickAsync`).
 
+### Parts (hitboxes)
+
+Extra hitboxes are invisible entities riding seats of the body, so they follow its position and rotation on every client.
+
+```ts
+/** weak point on the back: ×2.5, breaks after 40 damage */
+class Back extends Part('back', { seat: [0, 2.2, -0.6], size: [1, 1], damageMultiplier: 2.5, health: 40 }) {}
+class LeftArm extends Part('left_arm', { seat: [1.2, 1.2, 0], size: [0.8, 1.4], damageMultiplier: 0.5 }) {}
+
+class Golem extends entity('demo:golem', { parts: [Back, LeftArm], … }) {
+  onPartBreak(part: PartClass) {
+    if (part === Back) this.trigger(Stagger);
+  }
+}
+Golem.register();
+```
+
+| `Part(id, options)` | |
+| --- | --- |
+| `seat` | `[x, y, z]` in blocks from the body, rotated with it |
+| `size` | `[width, height]` of the hitbox |
+| `damageMultiplier` | Damage passed to the body (default 1) |
+| `health` | The part breaks after this much damage (counted before the multiplier). Without it the part never breaks |
+| `causes` | Causes passed to the body (default `entityAttack`, `projectile`), so fire or an explosion does not hit the body once per part |
+
+- Generated: an entity per part (`demo:golem_back`, no client entity, so nothing is drawn) and the body's `minecraft:rideable` (do not write your own).
+- Damage to a part goes to the body, multiplied; the part itself never loses health. Damage from the body itself or its other parts is ignored.
+- A broken part **stays on its seat** with a tiny hitbox and is ignored. Seats are assigned by riding order, so taking a part off would shift every later part to the wrong seat.
+- Part health and the broken state are saved on the body (dynamic property) and survive reloads. When the body is loaded, parts are put back on their seats in order; a missing one is spawned again.
+- The body dying removes its parts. A part without its body is removed after two checks (every 40 ticks).
+- `this.part(Back)`: `entity`, `health`, `maxHealth`, `broken`, `break()`, `restore()`. Hooks: `onPartHurt(part, damage, ev)`, `onPartBreak(part)`, `onPartRestore(part)`.
+- In tests, `sim.loadEntityClass(Golem)` loads the body and the parts.
+
 ### Using `src/pack.ts` instead
 
 If `src/index.ts` cannot run in the simulated environment (it calls something not simulated at the top level), put the list in `src/pack.ts`; it is used instead of `src/index.ts` when it exists. Registration for the hooks is still `register()`.
@@ -308,6 +341,45 @@ class Boar extends entity('demo:boar', { … }) {
 - **止めたとき:** ジェネレーターの `finally` と `onCancel` が動きます。死亡したときは `onDie` の前に止めます。削除のときは、次の tick に before イベントの外で止めるので、後片付けで世界を変更できます。ただし、死亡・削除のあとはエンティティ自体はもう使えないので、`this.entity.isValid` を確かめてください。
 - **例外:** 段取りの中で例外が出ても、止まるのはその段取りだけです（理由 `'error'`）。ほかの個体はそのまま進みます。
 - **ジェネレーターを使う理由:** `async` / `await` ではなくジェネレーターにしたのは、tick の中で同期的に進むので、どの tick で動くかが正確で、どこでも止められるからです。`await` の続きは Promise の解決後に動くので、どの tick で動くかを制御しにくく、テストにも `sim.tickAsync` が必要になります。
+
+### 部位（当たり判定）
+
+本体とは別の当たり判定は、本体の座席に乗せた見えないエンティティで作ります。座席に乗っているので、どのクライアントでも本体の位置と向きについてきます。
+
+```ts
+/** 背中の弱点: 2.5 倍、40 ダメージで壊れる */
+class Back extends Part('back', { seat: [0, 2.2, -0.6], size: [1, 1], damageMultiplier: 2.5, health: 40 }) {}
+class LeftArm extends Part('left_arm', { seat: [1.2, 1.2, 0], size: [0.8, 1.4], damageMultiplier: 0.5 }) {}
+
+class Golem extends entity('demo:golem', { parts: [Back, LeftArm], … }) {
+  onPartBreak(part: PartClass) {
+    if (part === Back) this.trigger(Stagger);
+  }
+}
+Golem.register();
+```
+
+| `Part(id, options)` | |
+| --- | --- |
+| `seat` | 本体から見た `[x, y, z]`（ブロック単位）。本体の向きに合わせて回る |
+| `size` | 当たり判定の `[幅, 高さ]` |
+| `damageMultiplier` | 本体に伝えるダメージの倍率（既定 1） |
+| `health` | この分のダメージで部位が壊れる（倍率を掛ける前の値で減る）。書かなければ壊れない |
+| `causes` | 本体に伝えるダメージの原因（既定 `entityAttack`・`projectile`）。炎や爆発で、部位の数だけ本体が減らないように |
+
+- **作られるもの:** 部位ごとのエンティティ（`demo:golem_back`。クライアント側の定義は無いので何も描かれない）と、本体の `minecraft:rideable` を作ります。`minecraft:rideable` は自分で書かないでください。
+- **ダメージの伝わり方:**
+  - 部位へのダメージは、倍率を掛けて本体に伝えます。部位自体の体力は減りません。
+  - 本体自身や、同じ本体のほかの部位からのダメージは無視します。
+- **壊れた部位は座席に乗ったまま:** 当たり判定を小さくし、以後のダメージを無視します。座席は乗った順番で決まるので、降ろすと、後ろの部位が 1 つずつずれて違う座席に来てしまうためです。
+- **保存と読み込み直し:**
+  - 部位の体力と壊れた状態は、本体（ダイナミックプロパティ）に保存されるので、読み込み直しても残ります。
+  - 本体が読み込まれたら、部位を順番通りに座席に乗せ直します。足りない部位は出し直します。
+- **消えるとき:** 本体が死ぬと、部位も消えます。本体のいない部位は、40 tick ごとの見回りで 2 回続けて見つかったら消します。
+- **スクリプトからの操作:**
+  - `this.part(Back)` で `entity`・`health`・`maxHealth`・`broken`・`break()`・`restore()` が使えます。
+  - フックは `onPartHurt(part, damage, ev)`・`onPartBreak(part)`・`onPartRestore(part)` です。
+- **テスト:** `sim.loadEntityClass(Golem)` で、本体と部位の JSON をまとめて読み込めます。
 
 ### 代わりに `src/pack.ts` を使う
 
