@@ -168,9 +168,11 @@ function install() {
     const entry = entryOf(ev.entity);
     if (entry) ensure(entry, ev.entity, 'chunk');
   });
-  // cancelVanillaHits: バニラの攻撃を取り消す（this.dealDamage() のダメージは通す）
+  // cancelVanillaHits: バニラの近接攻撃を取り消す（this.dealDamage() のダメージは通す）。
+  // 原因が entityAttack のものだけ。そのエンティティが撃った飛び道具（projectile）などは取り消さない
   world.beforeEvents.entityHurt.subscribe((ev) => {
     if (isScriptedHit()) return;
+    if (ev.damageSource.cause !== 'entityAttack') return;
     const src = ev.damageSource.damagingEntity;
     if (!src) return;
     let typeId: string;

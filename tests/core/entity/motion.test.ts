@@ -42,6 +42,25 @@ describe('leapTo', () => {
     // 跳ぶ向きを向く
     expect(sim.logs('impulse').length).toBeGreaterThan(1);
   });
+  const platform = (cx: number, cz: number, top: number) => {
+    for (let x = -2; x <= 2; x++) for (let z = -2; z <= 2; z++) for (let y = 0; y < top; y++) sim.setBlock({ x: cx + x, y, z: cz + z }, 'minecraft:stone');
+  };
+  it.each([
+    ['高い台へ +2', 0, 2, 8],
+    ['高い台へ +4', 0, 4, 8],
+    ['低い所へ -3', 3, 0, 8],
+    ['低い所へ -6（遠く）', 6, 0, 13],
+  ] as const)('高低差: %s', (_label, startY, goalY, dz) => {
+    if (goalY > 0) platform(0, dz, goalY);
+    if (startY > 0) platform(0, 0, startY);
+    const j = Jumper.of(sim.spawn('motion:jumper', { x: 0.5, y: startY, z: 0.5 }));
+    const goal = { x: 0.5, y: goalY, z: dz + 0.5 };
+    j.go.start(goal);
+    sim.tick(120);
+    expect(results[0].landed).toBe(true);
+    expect(results[0].location.y).toBeCloseTo(goalY);
+    expect(dist(results[0].location, goal)).toBeLessThan(0.5);
+  });
   it('遠すぎる目標には maxDistance（既定 16）だけ跳ぶ', () => {
     const j = Jumper.of(sim.spawn('motion:jumper', { x: 0, y: 0, z: 0 }));
     j.go.start({ x: 0, y: 0, z: 40 });
@@ -212,5 +231,12 @@ describe('サンプル: 跳びかかるカエル', () => {
     expect(Frog.of(frog).dealDamage(p, 2, { cause: EntityDamageCause.entityAttack })).toBe(true);
     expect(hp(p)).toBe(18);
     expect(sim.logs('knockback')).toHaveLength(0);
+  });
+  it('取り消すのは近接攻撃（entityAttack）だけ。そのエンティティの飛び道具などは取り消さない', () => {
+    const frog = sim.spawn('demo:frog', { x: 0, y: 0, z: 0 });
+    const p = sim.spawnPlayer('Steve', { x: 0, y: 0, z: 1 });
+    sim.hurt(p, 3, { damagingEntity: frog, cause: EntityDamageCause.projectile });
+    expect(hp(p)).toBe(17);
+    expect(sim.logs('damageCancelled')).toHaveLength(0);
   });
 });

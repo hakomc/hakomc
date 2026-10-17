@@ -52,6 +52,7 @@ it('enrages after 240 damage', () => {
 | Players stay valid after death (`sim.respawn` fires `playerSpawn`) | |
 | Mob attack damage to players scales with difficulty; Peaceful = 0 | |
 | Creative / Spectator players take no damage | |
+| Entities with `physics` fall with gravity 0.08 / drag 0.98 (vertical), 0.91 (horizontal) and land on the ground (`setGround`) or on top of blocks (`setBlock`). No side collisions | |
 | `world.beforeEvents.entityHurt` can cancel or change damage | |
 | Death is decided when the damage is applied; restoring health in `afterEvents.entityHurt` does not prevent it | |
 | Riders sit on seats rotated by the vehicle's body yaw | Multi-part hitboxes |
@@ -130,6 +131,7 @@ it('240 ダメージで怒る', () => {
 | プレイヤーは死んでも有効なまま（`sim.respawn` で `playerSpawn` が発火） | |
 | モブからプレイヤーへの攻撃は難易度で増減し、ピースフルでは 0 | |
 | クリエイティブ / スペクテイターのプレイヤーはダメージを受けない | |
+| `physics` のあるエンティティは、重力 0.08・縦の空気抵抗 0.98・横 0.91 で落ち、地面（`setGround`）かブロック（`setBlock`）の上面に着地する。横からの衝突は無い | |
 | `world.beforeEvents.entityHurt` でダメージを取り消し・変更できる | |
 | 死ぬかどうかはダメージの時点で決まり、`afterEvents.entityHurt` の中で体力を戻しても取り消せない | |
 | 座席の乗客は、乗り物の体の向きで回した位置に乗る | 複数部位の当たり判定 |

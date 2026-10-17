@@ -56,7 +56,8 @@ export interface EntityDefinition<P extends PropertyClass, E extends EventRef, P
   /** リソースパック側（見た目）。無ければ client_entity は作らない */
   client?: ClientDefinition;
   /**
-   * このエンティティのバニラの攻撃（minecraft:behavior.melee_attack など）のダメージを取り消す。
+   * このエンティティのバニラの近接攻撃（minecraft:behavior.melee_attack など、原因が entityAttack のもの）のダメージを取り消す。
+   * 飛び道具や爆発など、ほかの原因のダメージは取り消さない。
    * 追いかける・向く、といった AI はそのまま使い、ダメージは this.dealDamage() で与えるとき用。
    * 取り消すので、ノックバック・赤い点滅・音も出ない
    */

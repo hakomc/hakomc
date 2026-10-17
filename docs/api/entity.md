@@ -214,12 +214,12 @@ class Frog extends entity('demo:frog', {
 
 | | |
 | --- | --- |
-| `yield* this.leapTo(t, goal, options)` | Jump to `goal` on a parabola and wait for the landing. Returns `{ landed, ticks, location }`. The take-off speed is solved from gravity 0.08 and drag 0.98 (vertical) / 0.91 (horizontal); in the air the horizontal speed is corrected every tick, which also absorbs the difference from the game's real drag |
+| `yield* this.leapTo(t, goal, options)` | Jump to `goal` on a parabola (also up onto or down from a different height) and wait for the landing. Returns `{ landed, ticks, location }`. The take-off speed is solved from gravity 0.08 and drag 0.98 (vertical) / 0.91 (horizontal); in the air the horizontal speed is corrected every tick, which also absorbs the difference from the game's real drag |
 | `short` / `maxDistance` / `upward` | Land this far before the goal / jump at most this far (default 16) / initial vertical speed (default grows with distance) |
 | `follow: () => p.location` | Re-aim at a moving target every tick. Without it the jump goes to the spot passed in, so stepping aside dodges it |
 | `steer: false` / `maxTicks` | Pure ballistic jump / give up waiting for the landing (default 100) |
 | `this.dealDamage(target, amount, { cause, knockback })` | Damage from a script. Not cancelled by `cancelVanillaHits`. `knockback`: a number (horizontal, vertical 0.3) or `{ horizontal, vertical }`, away from this entity |
-| `cancelVanillaHits: true` | Cancel the damage of this entity's vanilla attacks (`behavior.melee_attack` …) in `beforeEvents.entityHurt` — so no knockback, red flash or sound either. The melee AI is still what makes a mob chase and face its target, so keep it and deal damage with `dealDamage` |
+| `cancelVanillaHits: true` | Cancel the damage of this entity's vanilla melee attacks (`behavior.melee_attack` …, cause `entityAttack`) in `beforeEvents.entityHurt` — so no knockback, red flash or sound either. Projectiles and other causes are not cancelled. The melee AI is still what makes a mob chase and face its target, so keep it and deal damage with `dealDamage` |
 
 Mob damage to players scales with difficulty, and is 0 on Peaceful.
 
@@ -533,12 +533,12 @@ class Frog extends entity('demo:frog', {
 
 | | |
 | --- | --- |
-| `yield* this.leapTo(t, goal, options)` | `goal` へ放物線で跳び、着地まで待つ。`{ landed, ticks, location }` を返す。最初の速さは、重力 0.08・縦の空気抵抗 0.98・横の空気抵抗 0.91 から計算する。空中では横の速さを毎 tick 直すので、実機の空気抵抗との差も吸収する |
+| `yield* this.leapTo(t, goal, options)` | `goal` へ放物線で跳び（高い所・低い所へも）、着地まで待つ。`{ landed, ticks, location }` を返す。最初の速さは、重力 0.08・縦の空気抵抗 0.98・横の空気抵抗 0.91 から計算する。空中では横の速さを毎 tick 直すので、実機の空気抵抗との差も吸収する |
 | `short` / `maxDistance` / `upward` | 目標のこの距離だけ手前に降りる / 跳ぶ距離の上限（既定 16） / 最初の縦の速さ（既定は距離が遠いほど高い） |
 | `follow: () => p.location` | 動く目標を毎 tick 狙い直す。無ければ渡した地点へ跳ぶので、横に避ければ外れる |
 | `steer: false` / `maxTicks` | 空中で直さない、ただの放物線 / 着地を待つ上限（既定 100） |
 | `this.dealDamage(target, amount, { cause, knockback })` | スクリプトからダメージを与える。`cancelVanillaHits` でも取り消されない。`knockback` は数値（横の強さ、縦は 0.3）か `{ horizontal, vertical }`。このエンティティから外向き |
-| `cancelVanillaHits: true` | このエンティティのバニラの攻撃（`behavior.melee_attack` など）のダメージを `beforeEvents.entityHurt` で取り消す（ノックバック・赤い点滅・音も出ない）。モブが追いかけたり、相手のほうを向いたりするのも近接攻撃の AI なので、AI は残して、ダメージは `dealDamage` で与える |
+| `cancelVanillaHits: true` | このエンティティのバニラの近接攻撃（`behavior.melee_attack` など、原因が `entityAttack` のもの）のダメージを `beforeEvents.entityHurt` で取り消す（ノックバック・赤い点滅・音も出ない）。飛び道具などほかの原因は取り消さない。モブが追いかけたり、相手のほうを向いたりするのも近接攻撃の AI なので、AI は残して、ダメージは `dealDamage` で与える |
 
 モブからプレイヤーへのダメージは難易度で増減し、ピースフルでは 0 です。
 

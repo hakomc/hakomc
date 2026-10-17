@@ -37,7 +37,12 @@ export interface LeapResult {
   location: Vector3;
 }
 
-/** 高さ h から縦の速さ vy で、地面（0）に着くまでの tick 数 */
+/**
+ * 縦の速さ vy で動き始めて、目標の高さに着くまでの tick 数。
+ * @param h 今の高さ − 目標の高さ（ブロック）。目標が上なら負
+ * @param vy 今の縦の速さ（ブロック / tick、上が正）
+ * @returns 上がっている間と、目標より上にいる間は数え続ける。目標の高さまで上がれないときは、頂点までの tick 数
+ */
 export function airTicks(h: number, vy: number): number {
   let y = h, v = vy, n = 0;
   while ((y > 0 || v > 0) && n < 200) {
@@ -48,8 +53,22 @@ export function airTicks(h: number, vy: number): number {
   return n;
 }
 
-/** n tick で横に d 進むための、最初の横の速さ（横の空気抵抗 0.91 を考える） */
+/**
+ * n tick で横に d 進むための、最初の横の速さ（横の空気抵抗 0.91 を考える）
+ * @param d 進む距離（ブロック）
+ * @param n tick 数
+ */
 export const horizontalSpeedFor = (d: number, n: number) => (d * (1 - DRAG_XZ)) / (1 - Math.pow(DRAG_XZ, Math.max(1, n)));
+
+/** 縦の速さ vy で、どこまで上がるか（頂点の高さ） */
+function apex(vy: number) {
+  let y = 0, v = vy;
+  while (v > 0) {
+    y += v;
+    v = (v - GRAVITY) * DRAG_Y;
+  }
+  return y;
+}
 
 const yawTo = (from: Vector3, to: Vector3) => (Math.atan2(-(to.x - from.x), to.z - from.z) * 180) / Math.PI;
 
@@ -69,8 +88,11 @@ export function* leap(entity: Entity, t: Steps, goal0: Vector3, options: LeapOpt
   let goal = goalNow();
   const dx = goal.x - start.x, dz = goal.z - start.z, d = Math.hypot(dx, dz) || 1;
   const D = Math.max(0, d - short);
-  const vy = options.upward ?? Math.min(1.15, 0.62 + D * 0.018);
-  const T = airTicks(goal.y - start.y > 0 ? 0 : start.y - goal.y, vy);
+  // 目標が高いときは、目標より少し上まで上がれる速さにする
+  const rise = goal.y - start.y;
+  let vy = options.upward ?? Math.min(1.15, 0.62 + D * 0.018);
+  if (options.upward === undefined) while (apex(vy) < rise + 0.6 && vy < 3) vy += 0.05;
+  const T = airTicks(start.y - goal.y, vy);
   const vh = horizontalSpeedFor(D, T);
   entity.setRotation({ x: 0, y: yawTo(start, goal) });
   entity.applyImpulse({ x: (dx / d) * vh, y: vy, z: (dz / d) * vh });
@@ -108,7 +130,11 @@ export interface HitOptions {
   knockback?: number | { horizontal: number, vertical: number };
 }
 
-/** スクリプトで与えているダメージの数（cancelVanillaHits で取り消さないため） */
+/**
+ * 今スクリプトで与えている途中のダメージの数（cancelVanillaHits で取り消さないため）。
+ * applyDamage の中で beforeEvents.entityHurt が同期的に呼ばれるので、その間だけ 1 以上になる。
+ * ダメージの中でさらにダメージを与えても（入れ子）、数で数えるので正しく戻る
+ */
 let scripted = 0;
 export const isScriptedHit = () => scripted > 0;
 

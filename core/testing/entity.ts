@@ -454,7 +454,9 @@ export function stepPhysics() {
     e._ground = false;
     e._loc.x += e._vel.x; e._loc.y += e._vel.y; e._loc.z += e._vel.z;
     e._vel.x *= 0.91; e._vel.z *= 0.91; e._vel.y = (e._vel.y - 0.08) * 0.98;
-    const floor = Math.max(state.groundY, isSolidAt({ x: e._loc.x, y: e._loc.y - 0.01, z: e._loc.z }) ? Math.floor(e._loc.y) : -Infinity);
+    // 足元のブロックの上面。速く落ちてブロックの中に入っても、その上に着地する
+    const below = e._loc.y - 0.01;
+    const floor = Math.max(state.groundY, isSolidAt({ x: e._loc.x, y: below, z: e._loc.z }) ? Math.floor(below) + 1 : -Infinity);
     if (e._vel.y <= 0 && e._loc.y <= floor) {
       e._loc.y = floor; e._ground = true; e._vel = { x: 0, y: 0, z: 0 };
       record('landed', { entityId: e.id, location: { ...e._loc } });
