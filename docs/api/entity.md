@@ -68,13 +68,13 @@ Write only the ones you need. Each one is called on the object of that entity.
 | Hook | When |
 | --- | --- |
 | `onSpawn(ev: EntitySpawnAfterEvent)` | Newly spawned (egg, summon, breeding…) |
-| `onLoad()` | Loaded rather than spawned: chunk load, world start, `/reload`. Existing entities are found at start-up |
+| `onLoad(reason)` | Loaded rather than spawned. `reason`: `'chunk'` (chunk load), `'startup'` (already there at world start / `/reload`), `'late'` (first seen through another event or `of()` before any load notice) |
 | `onHurt(ev: EntityHurtAfterEvent)` | It took damage |
 | `onHit(ev: EntityHitEntityAfterEvent)` | It hit something (melee) |
 | `onInteract(ev: PlayerInteractWithEntityAfterEvent)` | A player used / right-clicked it |
 | `onTick()` | Every tick |
-| `onDie(ev: EntityDieAfterEvent, last: LastKnown)` | It died. `this.entity` can no longer be read; `last` has the location, dimension and property values from the last tick |
-| `onRemove()` | Just before it is removed or unloaded. Still readable, but the world cannot be changed here (before event) |
+| `onDie(ev: EntityDieAfterEvent, last: LastKnown)` | It died. `this.entity` can no longer be read (`getProperty` etc. throw); `last` has the location, dimension id and property values from the last tick. For drops or effects use `last.location` with `world.getDimension(last.dimensionId)` |
+| `onRemove()` | Just before it is removed or unloaded (also after death). `this.entity` is still readable, but this runs inside a before event: changing the world (spawning, `setProperty`, `triggerEvent`, commands…) throws. Use `system.run(() => …)` to do it next tick — the entity is gone by then |
 
 - One object per entity: `Morgrave.of(entity)` returns the same object the hooks get, so fields are shared. `Morgrave.instances()` lists the loaded ones.
 - An exception in one entity's `onTick` does not stop the others (it is logged, then rethrown).
@@ -209,13 +209,13 @@ import './entities/morgrave';
 | フック | いつ |
 | --- | --- |
 | `onSpawn(ev: EntitySpawnAfterEvent)` | 新しく出現した（スポーンエッグ・召喚・繁殖など） |
-| `onLoad()` | 出現ではなく読み込まれた（チャンクの読み込み、ワールドの起動、`/reload`）。起動時はすでにいる個体を探す |
+| `onLoad(reason)` | 出現ではなく読み込まれた。`reason` は `'chunk'`（チャンクの読み込み）、`'startup'`（ワールドの起動・`/reload` のときにすでにいた）、`'late'`（読み込みの通知より先に、別のイベントや `of()` で初めて見つかった） |
 | `onHurt(ev: EntityHurtAfterEvent)` | ダメージを受けた |
 | `onHit(ev: EntityHitEntityAfterEvent)` | 攻撃（近接）を当てた |
 | `onInteract(ev: PlayerInteractWithEntityAfterEvent)` | プレイヤーに右クリック（使用）された |
 | `onTick()` | 毎 tick |
-| `onDie(ev: EntityDieAfterEvent, last: LastKnown)` | 死んだ。`this.entity` はもう読めないので、`last` に直前の tick の位置・ディメンション・プロパティの値を入れて渡す |
-| `onRemove()` | 消える・読み込まれなくなる直前。まだ読めるが、世界を変更する操作はできない（before イベントのため） |
+| `onDie(ev: EntityDieAfterEvent, last: LastKnown)` | 死んだ。`this.entity` はもう読めない（`getProperty` などは例外になる）ので、`last` に直前の tick の位置・ディメンションの id・プロパティの値を入れて渡す。ドロップや演出には `last.location` と `world.getDimension(last.dimensionId)` を使う |
+| `onRemove()` | 消える・読み込まれなくなる直前（死亡後に消えるときも呼ばれる）。`this.entity` はまだ読めるが、before イベントの中なので、世界を変更する操作（スポーン・`setProperty`・`triggerEvent`・コマンドなど）は例外になる。変更したいときは `system.run(() => …)` で次の tick に回す（その時点でエンティティはもう無い） |
 
 - **1 体につき 1 つのオブジェクト:** `Morgrave.of(entity)` は、フックに渡されるのと同じオブジェクトを返すので、フィールドも共有されます。`Morgrave.instances()` で、読み込まれている個体の一覧を得られます。
 - **例外:** ある個体の `onTick` で例外が出ても、ほかの個体は止まりません（ログに出してから投げ直します）。

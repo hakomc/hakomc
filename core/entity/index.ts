@@ -4,4 +4,4 @@ export { BoolProperty, EnumProperty, FloatProperty, IntProperty, Property, type 
 export { entity, EntityDefinitionError, type ClientDefinition, type EntityClass, type EntityDefinition, type Localized, type PackFiles } from './entity';
 export { buildPack, definePack, type PackDefinition } from './pack';
 export * from './generated/components';
-export { type LastKnown } from './runtime';
+export { type LastKnown, type LoadReason } from './runtime';

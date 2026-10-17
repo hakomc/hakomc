@@ -6,9 +6,9 @@
  * - 登録の一覧は globalThis に置く（ビルド時にプラグインが、ここから JSON を作るエンティティを集めるため）
  */
 import { system, world, type Entity } from '@minecraft/server';
-import { registry, type Entry, type HookTarget, type LastKnown, type RegisteredClass } from './registry';
+import { registry, type Entry, type HookTarget, type LastKnown, type LoadReason, type RegisteredClass } from './registry';
 
-export { registry, resetRegistry, type LastKnown, type RegisteredClass } from './registry';
+export { registry, resetRegistry, type LastKnown, type LoadReason, type RegisteredClass } from './registry';
 
 const DIMENSIONS = ['overworld', 'nether', 'the_end'];
 let installed = false;
@@ -18,7 +18,7 @@ export function register(cls: RegisteredClass): void {
   const map = registry();
   const prev = map.get(cls.id);
   if (prev && prev.cls !== cls) {
-    throw new Error(`[hakomc/entity] ${cls.id} は ${prev.cls.name} として登録済み。${cls.name} を同じ識別子で登録しようとした`);
+    throw new Error(`[hakomc/entity] 識別子 ${cls.id} のクラスが 2 つ register() された（${prev.cls.name} と ${cls.name}）。どちらかの識別子を変えるか、register() を片方だけにする`);
   }
   if (prev) return;
   const proto = cls.prototype as HookTarget;
@@ -40,7 +40,7 @@ export function instanceOf(e: Entity): HookTarget | undefined {
   } catch {
     return undefined;
   }
-  return entry ? ensure(entry, e) : undefined;
+  return entry ? ensure(entry, e, 'late') : undefined;
 }
 
 /** その種類の、今いる個体のオブジェクト */
@@ -52,14 +52,14 @@ export function instancesOf(cls: RegisteredClass): HookTarget[] {
  * オブジェクトを返す。まだ無ければ作り、onLoad を呼ぶ
  * （出現イベントの前に別のイベントが届いた・起動時の探索で漏れた、などのとき用）
  */
-function ensure(entry: Entry, e: Entity, isNewSpawn = false, spawnEvent?: unknown): HookTarget {
+function ensure(entry: Entry, e: Entity, how: LoadReason | { spawn: unknown }): HookTarget {
   const existing = entry.instances.get(e.id);
   // 読み込まれ直したエンティティは、別のオブジェクトとして渡されることがある。古いものが無効なら作り直す
   if (existing && (existing.entity === e || isValid(existing.entity))) return existing;
   const obj = new entry.cls(e);
   entry.instances.set(e.id, obj);
-  if (isNewSpawn) obj.onSpawn?.(spawnEvent);
-  else obj.onLoad?.();
+  if (typeof how === 'object') obj.onSpawn?.(how.spawn);
+  else obj.onLoad?.(how);
   return obj;
 }
 
@@ -95,7 +95,7 @@ function scan() {
       } catch {
         continue;
       }
-      for (const e of found) ensure(entry, e);
+      for (const e of found) ensure(entry, e, 'startup');
     }
   }
 }
@@ -119,23 +119,23 @@ function install() {
     const entry = entryOf(ev.entity);
     if (!entry) return;
     // 読み込みによる出現は onLoad として扱う（entityLoad と二重にならないよう、ensure が 1 回にまとめる）
-    ensure(entry, ev.entity, ev.cause !== 'Loaded', ev);
+    ensure(entry, ev.entity, ev.cause === 'Loaded' ? 'chunk' : { spawn: ev });
   });
   after.entityLoad.subscribe((ev) => {
     const entry = entryOf(ev.entity);
-    if (entry) ensure(entry, ev.entity);
+    if (entry) ensure(entry, ev.entity, 'chunk');
   });
   after.entityHurt.subscribe((ev) => {
     const entry = entryOf(ev.hurtEntity);
-    if (entry) ensure(entry, ev.hurtEntity).onHurt?.(ev);
+    if (entry) ensure(entry, ev.hurtEntity, 'late').onHurt?.(ev);
   });
   after.entityHitEntity.subscribe((ev) => {
     const entry = entryOf(ev.damagingEntity);
-    if (entry) ensure(entry, ev.damagingEntity).onHit?.(ev);
+    if (entry) ensure(entry, ev.damagingEntity, 'late').onHit?.(ev);
   });
   after.playerInteractWithEntity.subscribe((ev) => {
     const entry = entryOf(ev.target);
-    if (entry) ensure(entry, ev.target).onInteract?.(ev);
+    if (entry) ensure(entry, ev.target, 'late').onInteract?.(ev);
   });
   after.entityDie.subscribe((ev) => {
     // 実機では、死亡の通知の時点でエンティティはほぼ読めない。id と typeId だけ使う

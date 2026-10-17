@@ -1,5 +1,5 @@
 import type { Entity, EntityDieAfterEvent, EntityHitEntityAfterEvent, EntityHurtAfterEvent, EntitySpawnAfterEvent, PlayerInteractWithEntityAfterEvent } from '@minecraft/server';
-import { instanceOf, instancesOf, register, type LastKnown, type RegisteredClass } from './runtime';
+import { instanceOf, instancesOf, register, type LastKnown, type LoadReason, type RegisteredClass } from './runtime';
 import type { Component, EventRef } from './component';
 import { EntityEvent, type GroupClass } from './event';
 import type { PropertyClass, ValueOf } from './property';
@@ -312,8 +312,8 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
     // ---- フック（register() したクラスで、書いたものだけが呼ばれる） ----
     /** 新しく出現した（スポーンエッグ・召喚・繁殖など） */
     onSpawn?(ev: EntitySpawnAfterEvent): void;
-    /** 読み込まれた（チャンクの読み込み、ワールドの起動、/reload）。出現でない最初の 1 回 */
-    onLoad?(): void;
+    /** 読み込まれた（チャンクの読み込み、ワールドの起動、/reload）。出現でない最初の 1 回。reason で、どこで見つかったかが分かる */
+    onLoad?(reason: LoadReason): void;
     /** ダメージを受けた */
     onHurt?(ev: EntityHurtAfterEvent): void;
     /** 攻撃を当てた */
@@ -322,9 +322,17 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
     onInteract?(ev: PlayerInteractWithEntityAfterEvent): void;
     /** 毎 tick */
     onTick?(): void;
-    /** 死んだ。this.entity はもう読めないので、最後に読めた値（位置・プロパティ）を last で渡す */
+    /**
+     * 死んだ。this.entity はもう読めない（getProperty などは例外になる）ので、
+     * 直前の tick に読んだ値（位置・ディメンション・プロパティ）を last で渡す。
+     * ドロップや演出は、last.location と world.getDimension(last.dimensionId) を使う
+     */
     onDie?(ev: EntityDieAfterEvent, last: LastKnown): void;
-    /** 消える・読み込まれなくなる直前。まだ読めるが、世界を変更する操作はできない（beforeEvents のため） */
+    /**
+     * 消える・読み込まれなくなる直前（死亡後に消えるときも呼ばれる）。this.entity はまだ読める。
+     * before イベントの中なので、世界を変更する操作（スポーン・setProperty・triggerEvent・コマンドなど）は例外になる。
+     * 変更したいときは system.run(() => …) で次の tick に回す（その時点でエンティティはもう無い）
+     */
     onRemove?(): void;
   }
   return Definition;

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { EntityInitializationCause, type EntityDieAfterEvent, type EntityHitEntityAfterEvent, type EntityHurtAfterEvent, type EntitySpawnAfterEvent, type PlayerInteractWithEntityAfterEvent } from '@minecraft/server';
 import { sim } from '../../../core/testing';
-import { BoolProperty, IntProperty, entity, health, type LastKnown } from '../../../core/entity';
+import { BoolProperty, IntProperty, entity, health, type LastKnown, type LoadReason } from '../../../core/entity';
 import { registry } from '../../../core/entity/registry';
 
 const calls: string[] = [];
@@ -16,7 +16,7 @@ class Boss extends entity('hook:boss', { properties: [Hits, Marked], components:
   lastDie?: LastKnown;
 
   onSpawn(ev: EntitySpawnAfterEvent) { log(`spawn:${ev.cause}`); }
-  onLoad() { log('load'); }
+  onLoad(reason: LoadReason) { log(`load:${reason}`); }
   onHurt(ev: EntityHurtAfterEvent) {
     log(`hurt:${ev.damage}`);
     this.set(Hits, this.get(Hits) + 1);
@@ -68,14 +68,14 @@ describe('フック: 出現・読み込み', () => {
     for (const r of registry().values()) r.instances.clear();
     sim.emit('world.afterEvents.entitySpawn', { entity: e, cause: EntityInitializationCause.Loaded });
     sim.emit('world.afterEvents.entityLoad', { entity: e });
-    expect(calls).toEqual(['load']);
+    expect(calls).toEqual(['load:chunk']);
   });
   it('起動時（worldLoad と最初の tick）に、すでにいる個体を探して onLoad', () => {
     const e = spawnBoss();
     calls.length = 0;
     for (const r of registry().values()) r.instances.clear();
     sim.emit('world.afterEvents.worldLoad', {});
-    expect(calls).toEqual(['load']);
+    expect(calls).toEqual(['load:startup']);
     expect(Boss.instances().map((b) => b.entity)).toEqual([e]);
   });
   it('出現イベントより先に別のイベントが来ても、その場で作って onLoad してから届ける', () => {
@@ -83,7 +83,7 @@ describe('フック: 出現・読み込み', () => {
     calls.length = 0;
     for (const r of registry().values()) r.instances.clear();
     sim.hurt(e, 3);
-    expect(calls).toEqual(['load', 'hurt:3']);
+    expect(calls).toEqual(['load:late', 'hurt:3']);
   });
 });
 
@@ -150,7 +150,7 @@ describe('フック: 死亡・削除', () => {
     const reloaded = Object.create(e, { _valid: { value: true, writable: true } });
     calls.length = 0;
     sim.emit('world.afterEvents.entityLoad', { entity: reloaded });
-    expect(calls).toEqual(['load']);
+    expect(calls).toEqual(['load:chunk']);
     expect(Boss.of(reloaded)).not.toBe(old);
     expect(Boss.of(reloaded).entity).toBe(reloaded);
   });
@@ -160,7 +160,7 @@ describe('register', () => {
   it('同じクラスを何度登録してもよいが、同じ識別子の別のクラスはエラー', () => {
     expect(() => Boss.register()).not.toThrow();
     class Other extends entity('hook:boss') {}
-    expect(() => Other.register()).toThrow('hook:boss');
+    expect(() => Other.register()).toThrow('識別子 hook:boss のクラスが 2 つ register() された（Boss と Other）');
   });
   it('フックの引数の型が違えば型エラー', () => {
     class Wrong extends entity('hook:wrong') {

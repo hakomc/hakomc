@@ -15,11 +15,19 @@ export interface LastKnown {
   properties: Record<string, boolean | number | string | undefined>;
 }
 
+/**
+ * onLoad が呼ばれた理由
+ * - `chunk`: 読み込まれた（チャンクの読み込みなど。entityLoad / entitySpawn の Loaded）
+ * - `startup`: ワールドの起動時・/reload 時に、すでにいた個体を探して見つけた
+ * - `late`: 出現・読み込みの通知より先に、別のイベントや of() で初めて見つかった
+ */
+export type LoadReason = 'chunk' | 'startup' | 'late';
+
 /** フックを持つインスタンス（メソッドは全て省略可能） */
 export interface HookTarget {
   readonly entity: Entity;
   onSpawn?(ev: unknown): void;
-  onLoad?(): void;
+  onLoad?(reason: LoadReason): void;
   onHurt?(ev: unknown): void;
   onHit?(ev: unknown): void;
   onInteract?(ev: unknown): void;
