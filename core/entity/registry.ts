@@ -26,6 +26,8 @@ export type LoadReason = 'chunk' | 'startup' | 'late';
 /** フックを持つインスタンス（メソッドは全て省略可能） */
 export interface HookTarget {
   readonly entity: Entity;
+  /** this.timeline(...) で作った段取り */
+  readonly timelines?: ReadonlyArray<{ readonly running: boolean, advance(): void, cancel(reason: 'died' | 'removed'): void }>;
   onSpawn?(ev: unknown): void;
   onLoad?(reason: LoadReason): void;
   onHurt?(ev: unknown): void;
