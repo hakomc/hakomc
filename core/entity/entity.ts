@@ -514,6 +514,8 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
     onPartBreak?(part: PT): void;
     /** 壊れた部位が restore() で戻った */
     onPartRestore?(part: PT): void;
+    /** 無効にした部位（disable() / disabled: true）が攻撃された。ダメージは入っていない。防いだ音や演出に使う */
+    onPartBlocked?(part: PT, ev: EntityHurtAfterEvent): void;
   }
   return Definition;
 }

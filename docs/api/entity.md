@@ -149,13 +149,24 @@ Golem.register();
 | `health` | The part breaks after this much damage (counted before the multiplier). Without it the part never breaks |
 | `causes` | Causes passed to the body (default `entityAttack`, `projectile`), so fire or an explosion does not hit the body once per part |
 | `hideBone` | Bone(s) of the body's model to hide while the part is broken. A client-synced property (`<namespace>:part_<id>_broken`) and a render controller are generated. If you write your own `renderControllers`, a build warning shows the `part_visibility` entries to add |
+| `disabled` | Start disabled (see below). For a weak spot that cannot be hit until some condition is met |
 
 - Generated: an entity per part (`demo:golem_back`) with a client entity that draws nothing (an empty model), and the body's `minecraft:rideable` (do not write your own).
 - Damage to a part goes to the body, multiplied; the part itself never loses health. Damage from the body itself or its other parts is ignored.
 - A broken part **stays on its seat** with a tiny hitbox and is ignored. Seats are assigned by riding order, so taking a part off would shift every later part to the wrong seat.
 - Part health and the broken state are saved on the body (dynamic property) and survive reloads. When the body is loaded, parts are put back on their seats in order; a missing one is spawned again.
 - The body dying removes its parts. A part without its body is removed after two checks (every 40 ticks).
-- `this.part(Back)`: `entity`, `health`, `maxHealth`, `broken`, `break()`, `restore()`. Hooks: `onPartHurt(part, damage, ev)`, `onPartBreak(part)`, `onPartRestore(part)`.
+- `this.part(Back)`: `entity`, `health`, `maxHealth`, `broken`, `break()`, `restore()`, `disabled`, `disable()`, `enable()`. Hooks: `onPartHurt(part, damage, ev)`, `onPartBreak(part)`, `onPartRestore(part)`, `onPartBlocked(part, ev)`.
+- A **disabled** part ignores attacks: nothing goes to the body and the part's health does not drop; `onPartBlocked` is called instead (for a "clang" sound). By default its hitbox stays, so it shields what is behind it. `disable({ passThrough: true })` shrinks the hitbox instead, so attacks hit what is behind it (usually the body). Disabled is separate from broken: `restore()` keeps it disabled, and `enable()` does not repair a broken part. The state is saved on the body.
+
+```ts
+class Heart extends Part('heart', { seat: [0, 1.6, 1.1], size: [0.6, 0.6], damageMultiplier: 3, health: 30, disabled: true }) {}
+
+class Boss extends entity('demo:boss', { parts: [Shell, Heart], … }) {
+  onPartBreak(part: PartClass) { if (part === Shell) this.part(Heart).enable(); }   // the shell breaks → the heart opens up
+  onPartBlocked() { this.entity.dimension.playSound('random.anvil_land', this.entity.location); }
+}
+```
 - An attack hits the nearest hitbox along the line of sight, so a part buried in the body's hitbox cannot be hit — the body is hit instead. The build warns when 50% or more of a part's hitbox is inside the body's at some facing (checked every 15°; hitboxes do not rotate, only the seat position does). Move the seat outwards or make the body's hitbox smaller.
 - In tests, `sim.loadEntityClass(Golem)` loads the body and the parts.
 
@@ -255,7 +266,7 @@ When any class is `register()`ed, these slash commands are registered at start-u
 | `/hakomc:info [target]` | Health, properties, timelines (`▶` = running), parts |
 | `/hakomc:run <timeline> [target]` | Start a timeline (restart if running). The player who typed it is passed as the first argument |
 | `/hakomc:stop [target]` | Cancel all timelines |
-| `/hakomc:part <part> <break / restore> [target]` | Break or restore a part |
+| `/hakomc:part <part> <break / restore / disable / enable> [target]` | Break, restore, disable or enable a part |
 | `/hakomc:prop <property> <value> [target]` | Set a property (`true` / `false` / numbers are converted) |
 | `/hakomc:do <command> [target]` | A command added with `Cls.command(name, (self, ctx) => …)` |
 
@@ -479,6 +490,7 @@ Golem.register();
 | `health` | この分のダメージで部位が壊れる（倍率を掛ける前の値で減る）。書かなければ壊れない |
 | `causes` | 本体に伝えるダメージの原因（既定 `entityAttack`・`projectile`）。炎や爆発で、部位の数だけ本体が減らないように |
 | `hideBone` | 部位が壊れている間に隠す、本体のモデルのボーン。client_sync のプロパティ（`<名前空間>:part_<id>_broken`）とレンダーコントローラーを自動で作る。`renderControllers` を自分で書いているときは、足すべき `part_visibility` をビルド時の警告で知らせる |
+| `disabled` | 最初から無効にしておく（下を参照）。条件を満たすまで叩けない弱点に使う |
 
 - **作られるもの:** 部位ごとのエンティティ（`demo:golem_back`）と、何も描かないクライアント側の定義（空のモデル）、本体の `minecraft:rideable` を作ります。`minecraft:rideable` は自分で書かないでください。
 - **ダメージの伝わり方:**
@@ -490,8 +502,21 @@ Golem.register();
   - 本体が読み込まれたら、部位を順番通りに座席に乗せ直します。足りない部位は出し直します。
 - **消えるとき:** 本体が死ぬと、部位も消えます。本体のいない部位は、40 tick ごとの見回りで 2 回続けて見つかったら消します。
 - **スクリプトからの操作:**
-  - `this.part(Back)` で `entity`・`health`・`maxHealth`・`broken`・`break()`・`restore()` が使えます。
-  - フックは `onPartHurt(part, damage, ev)`・`onPartBreak(part)`・`onPartRestore(part)` です。
+  - `this.part(Back)` で `entity`・`health`・`maxHealth`・`broken`・`break()`・`restore()`・`disabled`・`disable()`・`enable()` が使えます。
+  - フックは `onPartHurt(part, damage, ev)`・`onPartBreak(part)`・`onPartRestore(part)`・`onPartBlocked(part, ev)` です。
+- **無効にした部位:**
+  - 攻撃を受け付けません。本体には伝えず、部位の体力も減りません。代わりに `onPartBlocked` が呼ばれます（弾かれた音などに使います）。
+  - 既定では当たり判定を残すので、後ろにあるものを盾のように守ります。`disable({ passThrough: true })` なら当たり判定を小さくし、攻撃は後ろ（ふつうは本体）に当たります。
+  - 壊れているかとは別の状態です。`restore()` しても無効のまま、`enable()` しても壊れた部位は直りません。状態は本体に保存されます。
+
+```ts
+class Heart extends Part('heart', { seat: [0, 1.6, 1.1], size: [0.6, 0.6], damageMultiplier: 3, health: 30, disabled: true }) {}
+
+class Boss extends entity('demo:boss', { parts: [Shell, Heart], … }) {
+  onPartBreak(part: PartClass) { if (part === Shell) this.part(Heart).enable(); }   // 殻が壊れたら、心臓を叩けるようにする
+  onPartBlocked() { this.entity.dimension.playSound('random.anvil_land', this.entity.location); }
+}
+```
 - **本体に埋まった部位:** 攻撃は視線上でいちばん手前の当たり判定に当たるので、本体の当たり判定に埋まった部位は叩けず、本体に当たります。そのため、ある向きで部位の当たり判定の 50% 以上が本体の中に入る場合は、ビルド時に警告します（15° ごとに確かめます。当たり判定の箱自体は回らず、座席の位置だけが回ります）。座席を外へ出すか、本体の当たり判定を小さくしてください。
 - **テスト:** `sim.loadEntityClass(Golem)` で、本体と部位の JSON をまとめて読み込めます。
 
@@ -597,7 +622,7 @@ pounce = this.timeline(this.pounceSteps, { lane: 'attack', holdStill: true });  
 | `/hakomc:info [対象]` | 体力・プロパティ・timeline（`▶` は動いている）・部位を見る |
 | `/hakomc:run <timeline> [対象]` | timeline を始める（動いていればやり直す）。打ったプレイヤーを最初の引数に渡す |
 | `/hakomc:stop [対象]` | timeline を全部止める |
-| `/hakomc:part <部位> <break / restore> [対象]` | 部位を壊す・戻す |
+| `/hakomc:part <部位> <break / restore / disable / enable> [対象]` | 部位を壊す・戻す・無効にする・有効に戻す |
 | `/hakomc:prop <プロパティ> <値> [対象]` | プロパティに値を入れる（`true` / `false` / 数値は変換する） |
 | `/hakomc:do <コマンド> [対象]` | `Cls.command(name, (self, ctx) => …)` で足したコマンド |
 

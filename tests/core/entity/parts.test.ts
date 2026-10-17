@@ -10,6 +10,8 @@ class Back extends Part('back', { seat: [0, 2.2, -0.6], size: [1, 1], damageMult
 /** 腕: 硬い（0.5 倍）。壊れない */
 class LeftArm extends Part('left_arm', { seat: [1.2, 1.2, 0], size: [0.8, 1.4], damageMultiplier: 0.5 }) {}
 class RightArm extends Part('right_arm', { seat: [-1.2, 1.2, 0], size: [0.8, 1.4], damageMultiplier: 0.5 }) {}
+/** 胸の核: 最初は無効（叩けない）。3 倍、30 で壊れる */
+class Core extends Part('core', { seat: [0, 1.4, 1.2], size: [0.6, 0.6], damageMultiplier: 3, health: 30, disabled: true }) {}
 
 class Stagger extends EntityEvent { static readonly id = 'stagger'; }
 
@@ -235,6 +237,87 @@ describe('部位: ダメージ', () => {
   it('health の無い部位は壊せない', () => {
     const { g } = spawnGolem();
     expect(() => g.part(LeftArm).break()).toThrow('health が無い');
+  });
+});
+
+/** 胸の核が弱点の番人。核は最初は叩けない */
+class Warden extends entity('demo:warden', {
+  components: [health({ value: 200, max: 200 })],
+  parts: [Back, LeftArm, Core],
+}) {
+  onPartHurt(part: PartClass, damage: number) { log.push(`hurt:${part.id}:${damage}`); }
+  onPartBlocked(part: PartClass) { log.push(`blocked:${part.id}`); }
+}
+Warden.register();
+
+describe('部位: 無効にする', () => {
+  beforeEach(() => sim.loadEntityClass(Warden));
+  const spawnWarden = () => {
+    const e = sim.spawn('demo:warden', { x: 0, y: 0, z: 0 });
+    return { e, g: Warden.of(e) };
+  };
+  const partEvents = (from = 0) => sim.logs('triggerEvent').slice(from).map((l) => l.eventName).filter((n) => n.startsWith('hakomc:part_'));
+  it('disabled: true の部位は、最初から攻撃を受け付けない（本体も部位の体力も減らず、onPartBlocked が呼ばれる）', () => {
+    const { e, g } = spawnWarden();
+    const p = sim.spawnPlayer('Steve', { x: 0, y: 0, z: 3 });
+    expect(g.part(Core).disabled).toBe(true);
+    sim.hurt(g.part(Core).entity!, 5, { damagingEntity: p });
+    expect(hpOf(e)).toBe(200);
+    expect(g.part(Core).health).toBe(30);
+    expect(log).toEqual(['blocked:core']);
+    // 炎などの原因は、防いだことにもしない
+    sim.hurt(g.part(Core).entity!, 5, { cause: EntityDamageCause.fire });
+    expect(log).toEqual(['blocked:core']);
+  });
+  it('enable() で受け付けるようになり、disable() でまた防ぐ。既定では当たり判定は残す', () => {
+    const { e, g } = spawnWarden();
+    const p = sim.spawnPlayer('Steve', { x: 0, y: 0, z: 3 });
+    const before = sim.logs('triggerEvent').length;
+    g.part(Core).enable();
+    sim.hurt(g.part(Core).entity!, 5, { damagingEntity: p });
+    expect(hpOf(e)).toBe(185);
+    expect(g.part(Core).health).toBe(25);
+    g.part(Back).disable();
+    expect(g.part(Back).disabled).toBe(true);
+    sim.hurt(g.part(Back).entity!, 4, { damagingEntity: p });
+    expect(hpOf(e)).toBe(185);
+    expect(log).toEqual(['hurt:core:15', 'blocked:back']);
+    expect(partEvents(before)).toEqual(['hakomc:part_restore', 'hakomc:part_restore']);
+  });
+  it('passThrough: true なら当たり判定を小さくし、有効に戻すと元の大きさに戻す', () => {
+    const { g } = spawnWarden();
+    const before = sim.logs('triggerEvent').length;
+    g.part(LeftArm).disable({ passThrough: true });
+    expect(partEvents(before)).toEqual(['hakomc:part_break']);
+    g.part(LeftArm).enable();
+    expect(partEvents(before)).toEqual(['hakomc:part_break', 'hakomc:part_restore']);
+  });
+  it('壊れているかとは別: 無効のまま壊す・戻すことができ、戻しても無効のまま', () => {
+    const { g } = spawnWarden();
+    g.part(Core).break();
+    expect(g.part(Core).broken).toBe(true);
+    g.part(Core).restore();
+    expect(g.part(Core).broken).toBe(false);
+    expect(g.part(Core).disabled).toBe(true);
+    // 壊れた部位を有効にしても、壊れたまま（当たり判定は小さいまま）
+    g.part(Back).break();
+    const before = sim.logs('triggerEvent').length;
+    g.part(Back).disable();
+    g.part(Back).enable();
+    expect(g.part(Back).broken).toBe(true);
+    expect(partEvents(before)).toEqual(['hakomc:part_break', 'hakomc:part_break']);
+  });
+  it('有効 / 無効は本体に保存され、読み込み直しても残る（すり抜ける部位は当たり判定を小さくし直す）', () => {
+    const { e, g } = spawnWarden();
+    g.part(Core).enable();
+    g.part(LeftArm).disable({ passThrough: true });
+    for (const r of registry().values()) r.instances.clear();
+    const before = sim.logs('triggerEvent').length;
+    sim.emit('world.afterEvents.entityLoad', { entity: e });
+    const again = Warden.of(e);
+    expect(again.part(Core).disabled).toBe(false);
+    expect(again.part(LeftArm).disabled).toBe(true);
+    expect(partEvents(before)).toEqual(['hakomc:part_break']);
   });
 });
 

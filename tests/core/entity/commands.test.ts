@@ -76,7 +76,7 @@ describe('デバッグ用のコマンド', () => {
     sim.tick();
     expect(Beast.of(b).roar.running).toBe(false);
   });
-  it('/hakomc:part: 部位を壊す・戻す', () => {
+  it('/hakomc:part: 部位を壊す・戻す・無効にする・有効に戻す', () => {
     const b = sim.spawn('cmd:beast', { x: 2, y: 0, z: 0 });
     ok(sim.command('/hakomc:part horn break', { player }));
     sim.tick();
@@ -84,6 +84,13 @@ describe('デバッグ用のコマンド', () => {
     sim.command('/hakomc:part horn restore', { player });
     sim.tick();
     expect(Beast.of(b).part(Horn).broken).toBe(false);
+    ok(sim.command('/hakomc:part horn disable', { player }));
+    sim.tick();
+    expect(Beast.of(b).part(Horn).disabled).toBe(true);
+    expect(sim.command('/hakomc:info', { player }).message).toMatch(/部位: horn 10\/10 無効$/);
+    sim.command('/hakomc:part horn enable', { player });
+    sim.tick();
+    expect(Beast.of(b).part(Horn).disabled).toBe(false);
   });
   it('/hakomc:prop: プロパティに値を入れる（true / false / 数値 / 文字列）', () => {
     const b = sim.spawn('cmd:beast', { x: 2, y: 0, z: 0 });

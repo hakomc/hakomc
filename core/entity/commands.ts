@@ -6,7 +6,7 @@
  * | `/hakomc:info [対象]` | 状態を見る（体力・プロパティ・動いている timeline・部位） |
  * | `/hakomc:run <timeline> [対象]` | timeline を始める（動いていれば止めてやり直す）。コマンドを打ったプレイヤーを最初の引数に渡す |
  * | `/hakomc:stop [対象]` | timeline を全部止める（対象を省くと、timeline が動いている中でいちばん近くの個体） |
- * | `/hakomc:part <部位> <break / restore> [対象]` | 部位を壊す・戻す |
+ * | `/hakomc:part <部位> <break / restore / disable / enable> [対象]` | 部位を壊す・戻す・無効にする・有効に戻す |
  * | `/hakomc:prop <プロパティ> <値> [対象]` | プロパティに値を入れる |
  * | `/hakomc:do <コマンド> [対象]` | Cls.command(...) で足したコマンド |
  *
@@ -91,11 +91,11 @@ export function describe(entry: Entry, obj: HookTarget): string {
   const e = obj.entity;
   const hp = e.getComponent('minecraft:health');
   const props = propsOf(entry.cls).map((n) => `${n.split(':')[1]}=${String(e.getProperty(n))}`);
-  const rec = obj as unknown as Record<string, unknown> & { part?(p: PartClass): { health?: number, maxHealth?: number, broken: boolean } };
+  const rec = obj as unknown as Record<string, unknown> & { part?(p: PartClass): { health?: number, maxHealth?: number, broken: boolean, disabled: boolean } };
   const tls = Object.keys(rec).filter((k) => rec[k] instanceof Timeline).map((k) => `${k}${(rec[k] as Timeline).running ? '▶' : ''}`);
   const parts = partsOf(entry.cls).map((p) => {
     const h = rec.part?.(p as never);
-    return `${p.id}${h?.health !== undefined ? ` ${h.health}/${h.maxHealth}` : ''}${h?.broken ? ' 壊' : ''}`;
+    return `${p.id}${h?.health !== undefined ? ` ${h.health}/${h.maxHealth}` : ''}${h?.broken ? ' 壊' : ''}${h?.disabled ? ' 無効' : ''}`;
   });
   return [
     `${entry.cls.name} (${e.id})`,
@@ -172,21 +172,26 @@ function registerAll(reg: CustomCommandRegistry) {
 
   if (allParts.length) {
     reg.registerEnum('hakomc:part', allParts);
-    reg.registerEnum('hakomc:part_action', ['break', 'restore']);
+    reg.registerEnum('hakomc:part_action', ['break', 'restore', 'disable', 'enable']);
     reg.registerCommand({
-      ...base, name: 'hakomc:part', description: 'hakomc: 部位を壊す・戻す',
+      ...base, name: 'hakomc:part', description: 'hakomc: 部位を壊す・戻す・無効にする・有効に戻す',
       mandatoryParameters: [{ name: 'hakomc:part', type: CustomCommandParamType.Enum }, { name: 'hakomc:part_action', type: CustomCommandParamType.Enum }],
       optionalParameters: [target],
     }, (origin, id: string, action: string, sel?: Entity[]) => {
-      const list = targets(origin, sel, (en) => partsOf(en.cls).some((p) => p.id === id && p.options.health !== undefined));
-      if (!list.length) return fail(`壊せる部位 ${id}（health のある部位）を持つエンティティが近くにいない`);
+      // 壊す・戻すは health のある部位だけ。無効・有効はどの部位でもできる
+      const needsHealth = action === 'break' || action === 'restore';
+      const list = targets(origin, sel, (en) => partsOf(en.cls).some((p) => p.id === id && (!needsHealth || p.options.health !== undefined)));
+      if (!list.length) return fail(needsHealth ? `壊せる部位 ${id}（health のある部位）を持つエンティティが近くにいない` : `部位 ${id} を持つエンティティが近くにいない`);
       later(origin, list, ({ entry, obj }) => {
         const part = partsOf(entry.cls).find((p) => p.id === id)!;
-        const h = (obj as unknown as { part(p: PartClass): { break(): void, restore(): void } }).part(part);
+        const h = (obj as unknown as { part(p: PartClass): { break(): void, restore(): void, disable(): void, enable(): void } }).part(part);
         if (action === 'break') h.break();
-        else h.restore();
+        else if (action === 'restore') h.restore();
+        else if (action === 'disable') h.disable();
+        else h.enable();
       });
-      return ok(`部位 ${id} を ${action === 'break' ? '壊す' : '戻す'}${list.some(({ entry }) => partsOf(entry.cls).some((p) => p.id === id && hiddenBones(p).length)) ? '（hideBone あり）' : ''}`);
+      const verb = { break: '壊す', restore: '戻す', disable: '無効にする', enable: '有効に戻す' }[action] ?? action;
+      return ok(`部位 ${id} を ${verb}${needsHealth && list.some(({ entry }) => partsOf(entry.cls).some((p) => p.id === id && hiddenBones(p).length)) ? '（hideBone あり）' : ''}`);
     });
   }
 

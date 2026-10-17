@@ -20,12 +20,27 @@ export interface PartHandle {
   readonly broken: boolean;
   /** 壊す（onPartBreak が呼ばれる） */
   break(): void;
-  /** 壊れた部位を戻し、体力を満タンにする（onPartRestore が呼ばれる） */
+  /** 壊れた部位を戻し、体力を満タンにする（onPartRestore が呼ばれる）。無効にした状態はそのまま */
   restore(): void;
+  /** 無効か（壊れているかとは別。壊れていても、無効にしておくことはできる） */
+  readonly disabled: boolean;
+  /**
+   * 無効にする。攻撃を受け付けない（本体に伝えず、部位の体力も減らない。代わりに onPartBlocked が呼ばれる）
+   * - 既定: 当たり判定は残る。後ろにある本体を、この部位が盾のように守る
+   * - passThrough: true: 当たり判定を小さくする。攻撃は後ろにある本体などに当たる
+   */
+  disable(options?: { passThrough?: boolean }): void;
+  /** 有効に戻す */
+  enable(): void;
 }
+
+/** 有効 / 無効（当たり判定を残す） / 無効（当たり判定を小さくする） */
+type PartState = 'on' | 'block' | 'pass';
 
 /** 部位の体力は本体のダイナミックプロパティに保存する（読み込み直しても残るように） */
 const HP_KEY = 'hakomc:parts';
+/** 有効 / 無効も同じく保存する（disable / enable したものだけ。無ければ options.disabled で決まる） */
+const STATE_KEY = 'hakomc:parts_state';
 
 const partEntities = new WeakMap<HookTarget, Map<string, Entity>>();
 
@@ -33,21 +48,30 @@ interface Owner extends HookTarget {
   onPartHurt?(part: PartClass, damage: number, ev: EntityHurtAfterEvent): void;
   onPartBreak?(part: PartClass): void;
   onPartRestore?(part: PartClass): void;
+  onPartBlocked?(part: PartClass, ev: EntityHurtAfterEvent): void;
 }
 
 const partsOf = (entry: Entry) => (entry.cls.definition as { parts?: readonly PartClass[] }).parts ?? [];
 
-function readHp(body: Entity): Record<string, number> {
+function readJson<T>(body: Entity, key: string): Record<string, T> {
   try {
-    const raw = body.getDynamicProperty(HP_KEY);
+    const raw = body.getDynamicProperty(key);
     return typeof raw === 'string' ? JSON.parse(raw) : {};
   } catch {
     return {};
   }
 }
+const readHp = (body: Entity) => readJson<number>(body, HP_KEY);
 function writeHp(body: Entity, hp: Record<string, number>) {
   body.setDynamicProperty(HP_KEY, JSON.stringify(hp));
 }
+function stateOf(body: Entity, part: PartClass): PartState {
+  return readJson<PartState>(body, STATE_KEY)[part.id] ?? (part.options.disabled ? 'block' : 'on');
+}
+function writeState(body: Entity, part: PartClass, state: PartState) {
+  body.setDynamicProperty(STATE_KEY, JSON.stringify({ ...readJson<PartState>(body, STATE_KEY), [part.id]: state }));
+}
+const isBroken = (body: Entity, part: PartClass) => part.options.health !== undefined && (readHp(body)[part.id] ?? part.options.health) <= 0;
 
 export function partHandle(owner: Owner, part: PartClass): PartHandle {
   const max = part.options.health;
@@ -60,13 +84,23 @@ export function partHandle(owner: Owner, part: PartClass): PartHandle {
     },
     get health() { return hpOf(); },
     get maxHealth() { return max; },
-    get broken() { return max !== undefined && (hpOf() ?? 1) <= 0; },
+    get broken() { return isBroken(body, part); },
+    get disabled() { return stateOf(body, part) !== 'on'; },
     break() {
       if (max === undefined) throw new Error(`[hakomc/entity] 部位 ${part.id} には health が無いので壊せない`);
       if ((hpOf() ?? 1) <= 0) return;
       writeHp(body, { ...readHp(body), [part.id]: 0 });
-      applyBroken(owner, part, true);
+      applyBone(owner, part, true);
+      applyHitbox(owner, part);
       owner.onPartBreak?.(part);
+    },
+    disable(options) {
+      writeState(body, part, options?.passThrough ? 'pass' : 'block');
+      applyHitbox(owner, part);
+    },
+    enable() {
+      writeState(body, part, 'on');
+      applyHitbox(owner, part);
     },
     restore() {
       if (max === undefined) return;
@@ -75,21 +109,28 @@ export function partHandle(owner: Owner, part: PartClass): PartHandle {
       delete hp[part.id];
       writeHp(body, hp);
       if (wasBroken) {
-        applyBroken(owner, part, false);
+        applyBone(owner, part, false);
+        applyHitbox(owner, part);
         owner.onPartRestore?.(part);
       }
     },
   };
 }
 
-function applyBroken(owner: HookTarget, part: PartClass, broken: boolean) {
-  // hideBone: 本体のプロパティで、RP が壊れた部位のボーンを隠す
+/** hideBone: 本体のプロパティで、RP が壊れた部位のボーンを隠す */
+function applyBone(owner: HookTarget, part: PartClass, broken: boolean) {
   if (hiddenBones(part).length && isValid(owner.entity)) {
     const bodyId = owner.entity.typeId;
     owner.entity.setProperty(partBrokenProperty(bodyId, part), broken);
   }
+}
+
+/** 当たり判定を、壊れている・すり抜ける無効なら小さく、それ以外は元の大きさにする */
+function applyHitbox(owner: HookTarget, part: PartClass) {
   const e = partEntities.get(owner)?.get(part.id);
-  if (e && isValid(e)) e.triggerEvent(broken ? PART_BREAK_EVENT : PART_RESTORE_EVENT);
+  if (!e || !isValid(e) || !isValid(owner.entity)) return;
+  const small = isBroken(owner.entity, part) || stateOf(owner.entity, part) === 'pass';
+  e.triggerEvent(small ? PART_BREAK_EVENT : PART_RESTORE_EVENT);
 }
 
 const isValid = (e: Entity | undefined) => {
@@ -139,9 +180,15 @@ export function syncParts(entry: Entry, owner: HookTarget): void {
     for (const extra of [...pool.values()].flat()) extra.remove();
   }
   partEntities.set(owner, map);
-  // 壊れた部位は、当たり判定を小さくしておく（新しく出した部位は、出した時点では壊れていない見た目のため）
-  const hp = readHp(body);
-  for (const p of parts) if (p.options.health !== undefined && (hp[p.id] ?? p.options.health) <= 0) applyBroken(owner, p, true);
+  // 壊れた・すり抜ける部位は、当たり判定を小さくしておく（新しく出した部位は、出した時点では元の大きさのため）
+  for (const p of parts) {
+    if (isBroken(body, p)) {
+      applyBone(owner, p, true);
+      applyHitbox(owner, p);
+    } else if (stateOf(body, p) === 'pass') {
+      applyHitbox(owner, p);
+    }
+  }
 }
 
 /** 本体が死んだら、部位を消す */
@@ -180,6 +227,10 @@ export function handlePartHurt(ev: EntityHurtAfterEvent, ensureOwner: (entry: En
   const owner = ensureOwner(entry, body) as Owner;
   const handle = partHandle(owner, part);
   if (handle.broken) return true;
+  if (handle.disabled) {
+    owner.onPartBlocked?.(part, ev);
+    return true;
+  }
   const dealt = ev.damage * (part.options.damageMultiplier ?? 1);
   body.applyDamage(dealt, { cause: src.cause, ...(attacker ? { damagingEntity: attacker } : {}) });
   owner.onPartHurt?.(part, dealt, ev);
