@@ -5,6 +5,7 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import { stableUuid, listFiles, cleanDir, writeZip, routeAssets, copyRouted, ASSET_ROUTES, writeJsonFiles, writeLang } from './packFiles';
 import { loadPack, PackLoadError } from './packLoader';
+import { checkResourceRefs } from './validateRefs';
 import type { PackFiles } from '../core/entity/entity';
 
 type ManifestStub = {
@@ -79,6 +80,11 @@ type PluginConfig = {
    * ビルド時に読み込み、BP / RP の JSON とローカライズを作る。false で使わない。
    */
   pack?: string | false,
+  /**
+   * ビルドの最後に、リソースパックのエンティティ定義が参照しているモデル・テクスチャ・アニメーション・
+   * レンダーコントローラーがパックの中にあるか確かめ、無ければ警告する（既定 true）
+   */
+  checkRefs?: boolean,
 };
 
 const DIST_BP = 'dist/behavior_pack';
@@ -145,6 +151,7 @@ const behaviorPacker = ({
   resourcePack,
   mcaddon = false,
   pack,
+  checkRefs = true,
 }: PluginConfig = {
   name: 'my first plugin',
   description: '',
@@ -375,6 +382,7 @@ globalThis.__SOURCE_MAP__ = ${JSON.stringify(embeddedSourceMap)};
         'metadata': { 'authors': authors },
       };
       const rpManifest = rpConfig.manifest ? deepMerge(rpStub, rpConfig.manifest) : rpStub;
+      if (checkRefs) for (const w of checkResourceRefs(DIST_RP)) this.warn(w);
       fs.writeFileSync(join(DIST_RP, 'manifest.json'), JSON.stringify(rpManifest, null, 2));
     }
 
