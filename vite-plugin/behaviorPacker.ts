@@ -1,8 +1,9 @@
 import type { Plugin } from 'vite';
 import type { OutputBundle, NormalizedOutputOptions } from 'rollup';
-import { resolve, relative } from 'path';
+import { resolve, relative, join } from 'path';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
+import { stableUuid, listFiles, cleanDir, writeZip, routeAssets, copyRouted, ASSET_ROUTES } from './packFiles';
 
 type ManifestStub = {
   format_version?: number,
@@ -24,8 +25,11 @@ type ManifestStub = {
     [key: string]: unknown,
   }>,
   dependencies?: Array<{
+    /** スクリプト API への依存 */
     module_name?: string,
-    version?: string,
+    /** 他のパックへの依存 */
+    uuid?: string,
+    version?: string | number[],
     [key: string]: unknown,
   }>,
   metadata?: {
@@ -33,6 +37,16 @@ type ManifestStub = {
     [key: string]: unknown,
   },
   [key: string]: unknown,
+};
+
+type ResourcePackConfig = {
+  /** 省略時はビヘイビアパックの uuid から毎回同じ値を作る */
+  uuid?: string,
+  name?: string,
+  description?: string,
+  version?: number[],
+  /** 生成したマニフェストに上書きする内容 */
+  manifest?: ManifestStub,
 };
 
 type PluginConfig = {
@@ -43,7 +57,25 @@ type PluginConfig = {
   version?: number[],
   embedSourceMap?: boolean,
   manifest?: ManifestStub,
+  /**
+   * 画像・音などのファイルを置くフォルダ（既定 'assets'）。中身は次のように振り分ける。
+   * - textures/ sounds/ models/ particles/ font/ → リソースパック
+   * - structures/ functions/ → ビヘイビアパック
+   * - behavior/ と resource/ の中身 → それぞれのパックの直下（JSON を直接置きたいとき）
+   * - 直下の pack_icon.png → 両方
+   */
+  assetsDir?: string,
+  /**
+   * リソースパックの設定。既定では、リソースパックに入るファイルがあれば作る。false で作らない。
+   * ビヘイビアパックとリソースパックは互いに依存関係を持つ。
+   */
+  resourcePack?: ResourcePackConfig | false,
+  /** true なら dist/<name>.mcaddon、文字列ならそのパスに .mcaddon を書き出す */
+  mcaddon?: boolean | string,
 };
+
+const DIST_BP = 'dist/behavior_pack';
+const DIST_RP = 'dist/resource_pack';
 
 const mergeArrayByKey = <T extends Record<string, unknown>>(
   target: T[],
@@ -53,7 +85,9 @@ const mergeArrayByKey = <T extends Record<string, unknown>>(
   const result = [...target];
   for (const sourceItem of source) {
     const keyValue = sourceItem[key];
-    const existingIndex = result.findIndex(item => item[key] === keyValue);
+    const existingIndex = key === 'module_name'
+      ? result.findIndex(item => dependencyKey(item) === dependencyKey(sourceItem))
+      : result.findIndex(item => item[key] === keyValue);
     if (existingIndex >= 0) {
       result[existingIndex] = { ...result[existingIndex], ...sourceItem };
     } else {
@@ -67,6 +101,9 @@ const ARRAY_MERGE_KEYS: Record<string, string> = {
   dependencies: 'module_name',
   modules: 'type',
 };
+
+/** dependencies は module_name（スクリプト API）か uuid（パック）のどちらかで同じものを見分ける */
+const dependencyKey = (d: Record<string, unknown>) => (d.module_name ?? d.uuid) as unknown;
 
 const deepMerge = <T extends Record<string, unknown>>(target: T, source: Partial<T>): T => {
   const result = { ...target };
@@ -95,16 +132,36 @@ const behaviorPacker = ({
   description = '',
   authors = [],
   version = [1, 0, 0],
-  embedSourceMap = true,
+ embedSourceMap = true,
   manifest: manifestOverride,
+  assetsDir = 'assets',
+  resourcePack,
+  mcaddon = false,
 }: PluginConfig = {
   name: 'my first plugin',
   description: '',
   authors: [],
   version: [1, 0, 0],
   embedSourceMap: true,
-}): Plugin => ({
+}): Plugin => {
+  // UUID はプラグインを作った時点で決める（watch で作り直しても変わらないように）。
+  // uuid を指定していれば、モジュールやリソースパックの UUID もそこから毎回同じ値になる。
+  const behaviorUUID = uuid ?? crypto.randomUUID();
+  const derive = (what: string) => (uuid ? stableUuid(`${uuid}:${what}`) : crypto.randomUUID());
+  const scriptModuleUUID = derive('script');
+  const dataModuleUUID = derive('data');
+  const assetsPath = resolve(process.cwd(), assetsDir);
+  const rpUUIDFor = (cfg: ResourcePackConfig) => cfg.uuid ?? derive('resource_pack');
+  const rpVersion = (resourcePack || undefined)?.version ?? version;
+
+  return {
   name: 'BehaviorPacker',
+
+  buildStart() {
+    // vite build --watch のとき、assets の変更でも作り直す。
+    // ファイルではなくフォルダごと登録する（後から足したファイルも拾うため。フォルダがまだ無くても、作られれば拾う）
+    this.addWatchFile(assetsPath);
+  },
   
   config: () => {
     return {
@@ -179,7 +236,7 @@ globalThis.__SOURCE_MAP__ = ${JSON.stringify(embeddedSourceMap)};
     }*/
   },
 
-  writeBundle: async (_options: NormalizedOutputOptions, bundle: OutputBundle) => {
+  async writeBundle(_options: NormalizedOutputOptions, bundle: OutputBundle) {
     const entryFile = Object.values(bundle).find(
       (file) => file.type === 'chunk' && file.isEntry
     );
@@ -188,7 +245,19 @@ globalThis.__SOURCE_MAP__ = ${JSON.stringify(embeddedSourceMap)};
       throw new Error('No entry file found');
     }
 
-    const behaviorUUID = uuid ?? crypto.randomUUID();
+    const assets = routeAssets(assetsPath);
+    const where = relative(process.cwd(), assetsPath).split('\\').join('/');
+    const generated = assets.skipped.filter((x) => x.reason === 'generated').map((x) => x.rel);
+    const unknown = assets.skipped.filter((x) => x.reason === 'unknown').map((x) => x.rel);
+    if (generated.length) this.warn(`${where} の ${generated.join(', ')} は生成物と重なるのでコピーしない（manifest は manifest オプションで上書きできる）`);
+    if (unknown.length) this.warn(`${where} の ${unknown.join(', ')} は入れる先のパックが分からないのでコピーしない。${Object.keys(ASSET_ROUTES).join('/')}/ のどれかに置くか、behavior/ か resource/ の下に置く`);
+    // 既定では、リソースパックに入るファイルがあるときだけ作る
+    const rpConfig: ResourcePackConfig | undefined = resourcePack === false
+      ? undefined
+      : resourcePack ?? (assets.rp.length ? {} : undefined);
+    if (resourcePack === false && assets.rp.length) this.warn(`resourcePack: false なので、${where} のリソースパック用のファイル（${assets.rp.length} 個）は使わない`);
+    const rpUUID = rpConfig ? rpUUIDFor(rpConfig) : undefined;
+    const hasBpAssets = assets.bp.length > 0;
     const manifestStub: ManifestStub = {
       'format_version': 2,
       'header': {
@@ -203,10 +272,11 @@ globalThis.__SOURCE_MAP__ = ${JSON.stringify(embeddedSourceMap)};
           'description': 'script',
           'type': 'script',
           'language': 'javascript',
-          'uuid': crypto.randomUUID(),
+          'uuid': scriptModuleUUID,
           'version': [1, 0, 0],
           'entry': `scripts/${entryFile.fileName}`,
-        }
+        },
+        ...(hasBpAssets ? [{ 'description': 'data', 'type': 'data', 'uuid': dataModuleUUID, 'version': [1, 0, 0] }] : []),
       ],
       'dependencies': [
         {
@@ -217,6 +287,7 @@ globalThis.__SOURCE_MAP__ = ${JSON.stringify(embeddedSourceMap)};
           'module_name': '@minecraft/server-ui',
           'version': '2.1.0'
         },
+        ...(rpUUID ? [{ 'uuid': rpUUID, 'version': rpVersion }] : []),
       ],
       'metadata': {
         'authors': authors,
@@ -227,8 +298,47 @@ globalThis.__SOURCE_MAP__ = ${JSON.stringify(embeddedSourceMap)};
       ? deepMerge(manifestStub, manifestOverride)
       : manifestStub;
 
-    fs.writeFileSync('./dist/behavior_pack/manifest.json', JSON.stringify(finalManifest, null, 2));
+    // ビヘイビアパックの素材（scripts は vite の出力なので残す）
+    cleanDir(DIST_BP, ['scripts']);
+    copyRouted(assets.bp, DIST_BP);
+    fs.writeFileSync(join(DIST_BP, 'manifest.json'), JSON.stringify(finalManifest, null, 2));
+
+    // リソースパックは全て生成物なので、毎回作り直す（無効にしたら消す）
+    fs.rmSync(DIST_RP, { recursive: true, force: true });
+    if (rpConfig && rpUUID) {
+      fs.mkdirSync(DIST_RP, { recursive: true });
+      copyRouted(assets.rp, DIST_RP);
+      const rpStub: ManifestStub = {
+        'format_version': 2,
+        'header': {
+          'name': rpConfig.name ?? `${name} resources`,
+          'description': rpConfig.description ?? description,
+          'uuid': rpUUID,
+          'version': rpVersion,
+          'min_engine_version': (finalManifest.header?.min_engine_version as number[]) ?? [1, 21, 120],
+        },
+        'modules': [
+          { 'description': 'resources', 'type': 'resources', 'uuid': derive('resources'), 'version': [1, 0, 0] },
+        ],
+        'dependencies': [
+          { 'uuid': behaviorUUID, 'version': version },
+        ],
+        'metadata': { 'authors': authors },
+      };
+      const rpManifest = rpConfig.manifest ? deepMerge(rpStub, rpConfig.manifest) : rpStub;
+      fs.writeFileSync(join(DIST_RP, 'manifest.json'), JSON.stringify(rpManifest, null, 2));
+    }
+
+    if (mcaddon) {
+      const out = typeof mcaddon === 'string' ? mcaddon : `dist/${name.replace(/[\\/:*?"<>|]/g, '_')}.mcaddon`;
+      const entries = [
+        ...listFiles(DIST_BP).map((f) => ({ path: `behavior_pack/${relative(DIST_BP, f).split('\\').join('/')}`, data: fs.readFileSync(f) })),
+        ...(rpConfig ? listFiles(DIST_RP).map((f) => ({ path: `resource_pack/${relative(DIST_RP, f).split('\\').join('/')}`, data: fs.readFileSync(f) })) : []),
+      ];
+      writeZip(out, entries);
+    }
   },
-});
+  };
+};
 
 export default behaviorPacker;

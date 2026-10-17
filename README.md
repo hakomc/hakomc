@@ -21,6 +21,7 @@ This repository is the core source of the framework side.
 - [Form (`hakomc/form/component`)](docs/api/form.md)
 - [DDUI (`hakomc/form/ddui/component`)](docs/api/ddui.md)
 - [Testing (`hakomc/testing`)](docs/api/testing.md)
+- [Vite Plugin (`hakomc/vite-plugin`): behaviorPacker](docs/api/vite-plugin.md)
 
 ### Development workflow
 1. Create a new working branch such as feature/*
@@ -47,6 +48,7 @@ ScriptAPIを使用したライブラリやプラグイン作成をサポート�
 - [Form (`hakomc/form/component`)](docs/api/form.md)
 - [DDUI (`hakomc/form/ddui/component`)](docs/api/ddui.md)
 - [Testing (`hakomc/testing`)](docs/api/testing.md)
+- [Vite Plugin (`hakomc/vite-plugin`): behaviorPacker](docs/api/vite-plugin.md)
 
 ### 開発手順
 1. feature/* 等で新しく作業ブランチを切る
