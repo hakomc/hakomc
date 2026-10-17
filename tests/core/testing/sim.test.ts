@@ -235,3 +235,24 @@ describe('生成したスタブ', () => {
     expect(STUB_SOURCE_VERSION).toBe(installed);
   });
 });
+
+describe('reset', () => {
+  it('reset({ all: true }) はイベント購読を全部消す', () => {
+    const fn = vi.fn();
+    world.afterEvents.entitySpawn.subscribe(fn);
+    system.afterEvents.scriptEventReceive.subscribe(fn);
+    world.beforeEvents.entityHurt.subscribe(fn);
+    sim.reset({ all: true });
+    const e = sim.spawn('t:mob', { x: 0, y: 0, z: 0 });
+    sim.scriptEvent('t:x');
+    e.applyDamage(1);
+    expect(fn).not.toHaveBeenCalled();
+  });
+  it('reset() は購読を残す', () => {
+    const fn = vi.fn();
+    world.afterEvents.entitySpawn.subscribe(fn);
+    sim.reset();
+    sim.spawn('t:mob', { x: 0, y: 0, z: 0 });
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+});

@@ -43,6 +43,17 @@ export class Signal {
 }
 
 /**
+ * これまでに作られた全ての Signal。
+ * signalGroup は Proxy で遅延生成するため Object.keys では列挙できない。購読の一括解除はこの一覧を使う。
+ */
+const allSignals: Signal[] = [];
+
+/** 全ての Signal から購読を外す（sim.reset({ all: true }) 用） */
+export function clearAllSubscriptions(): void {
+  for (const s of allSignals) s.handlers.length = 0;
+}
+
+/**
  * 存在しない名前のイベントでも subscribe できる入れ物。
  * 実機にあるイベントを模擬側で一つずつ書かなくても、ユーザーコードが落ちないようにする。
  */
@@ -55,6 +66,7 @@ export function signalGroup(prefix: string): Record<string, Signal> {
       if (!s) {
         s = new Signal(`${prefix}.${key}`);
         signals.set(key, s);
+        allSignals.push(s);
       }
       return s;
     },

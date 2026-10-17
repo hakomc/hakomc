@@ -11,7 +11,7 @@
  * expect(player.getComponent('health').currentValue).toBeLessThan(20);
  * ```
  */
-import { state, signals, record, type EntityTypeDef, type LogEntry, type Vector3 } from './runtime';
+import { state, signals, record, clearAllSubscriptions, type EntityTypeDef, type LogEntry, type Vector3 } from './runtime';
 import { MockEntity, MockPlayer, stepPhysics, flushProperties } from './entity';
 import { getDimension, world as mockWorld, system as mockSystem } from './server';
 import type { Entity, Player, Dimension, World, System } from '@minecraft/server';
@@ -147,9 +147,7 @@ export const sim = {
     }
     if (all) {
       state.types.clear();
-      for (const group of Object.values(signals)) {
-        for (const key of Object.keys(group)) group[key].handlers.length = 0;
-      }
+      clearAllSubscriptions();
     }
   },
 
