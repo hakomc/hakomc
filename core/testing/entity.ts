@@ -317,8 +317,12 @@ export function dealDamage(target: MockEntity, amount: number, opts: { cause?: s
   if (damage <= 0 && !force) return false;
   target._hp = Math.max(0, target._hp - damage);
   record('damage', { entityId: target.id, damage, by: src?.typeId, cause: damageSource.cause });
+  // 死ぬかどうかは、ダメージの時点で決まる（実機では after イベントは後から届くので、
+  // その中で体力を戻しても死亡は取り消せない）
+  const dies = target._hp <= 0;
   signals.worldAfter.entityHurt.emit({ hurtEntity: target, damage, damageSource });
-  if (target._hp <= 0) {
+  if (dies) {
+    target._hp = 0;
     if (isPlayer) {
       target._dead = true;
       signals.worldAfter.entityDie.emit({ deadEntity: target, damageSource });

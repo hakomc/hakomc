@@ -5,6 +5,8 @@ import { Timeline, type Clock, type Steps, type TimelineOptions, type WaitReques
 import type { Component, EventRef } from './component';
 import { EntityEvent, type GroupClass } from './event';
 import type { PropertyClass, ValueOf } from './property';
+import { bodyRideable, partEntityJson, type PartClass } from './part';
+import { partHandle, type PartHandle } from './parts-runtime';
 
 /** 言語ごとの文字列（en_US / ja_JP など） */
 export type Localized = Partial<Record<'en_US' | 'ja_JP' | (string & {}), string>>;
@@ -29,7 +31,7 @@ export interface ClientDefinition {
   extra?: Record<string, unknown>;
 }
 
-export interface EntityDefinition<P extends PropertyClass, E extends EventRef> {
+export interface EntityDefinition<P extends PropertyClass, E extends EventRef, PT extends PartClass = PartClass> {
   /** 表示名（entity.<id>.name） */
   name?: Localized;
   properties?: readonly P[];
@@ -40,6 +42,8 @@ export interface EntityDefinition<P extends PropertyClass, E extends EventRef> {
    * グループや、グループ・コンポーネントの中から参照されたイベントは自動で集めるので、ここに全部書かなくてよい。
    */
   events?: readonly E[];
+  /** 部位（当たり判定）。座席の順番はこの並び順 */
+  parts?: readonly PT[];
   /** どのイベントからも参照されないが、JSON に入れておきたいグループ */
   groups?: readonly GroupClass[];
   /** 既定 true */
@@ -71,7 +75,7 @@ const one = (v: string | Record<string, string>) => (typeof v === 'string' ? { d
 
 export interface EntityClass {
   readonly id: string;
-  readonly definition: EntityDefinition<PropertyClass, EventRef>;
+  readonly definition: EntityDefinition<PropertyClass, EventRef, PartClass>;
   /** JSON での名前（名前空間付き）。スクリプトからも使える */
   propertyName(p: PropertyClass): string;
   eventName(e: EventRef | string): string;
@@ -94,7 +98,7 @@ export interface EntityClass {
  * Morgrave.of(entity).roar();
  * ```
  */
-export function entity<const P extends PropertyClass = never, const E extends EventRef = never>(id: string, def: EntityDefinition<P, E> = {}) {
+export function entity<const P extends PropertyClass = never, const E extends EventRef = never, const PT extends PartClass = never>(id: string, def: EntityDefinition<P, E, PT> = {}) {
   if (!/^[a-z0-9_.-]+:[a-z0-9_.-]+$/.test(id)) throw new EntityDefinitionError(`エンティティの識別子 "${id}" は「名前空間:名前」の形で、小文字・数字・_ . - だけにする`);
   const ns = id.split(':')[0];
   const qualify = (name: string) => (name.includes(':') ? name : `${ns}:${name}`);
@@ -156,6 +160,17 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
     };
 
     const base = componentsJson(def.components ?? [], 'components');
+    const parts = def.parts ?? [];
+    if (parts.length) {
+      if (base['minecraft:rideable']) throw new EntityDefinitionError(`${id}: 部位（parts）を使うときは、座席（minecraft:rideable）はフレームワークが作るので components に書かない`);
+      const seen = new Set<string>();
+      for (const part of parts) {
+        if (!/^[a-z0-9_]+$/.test(part.id ?? '')) throw new EntityDefinitionError(`${id}: 部位の id "${part.id}" は小文字・数字・_ だけにする`);
+        if (seen.has(part.id)) throw new EntityDefinitionError(`${id}: 部位の id ${part.id} が 2 つある`);
+        seen.add(part.id);
+      }
+      base['minecraft:rideable'] = bodyRideable(id, parts);
+    }
     const groupJson: Record<string, unknown> = {};
     const eventJson: Record<string, unknown> = {};
     // イベント → グループ → （その中のコンポーネントが指す）イベント… と辿る。循環していても、一度見たものは飛ばすので止まる
@@ -204,7 +219,12 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
     }
 
     const fileName = id.split(':')[1];
+    const partFiles = Object.fromEntries(parts.map((part) => [
+      `entities/${fileName}_${part.id}.json`,
+      partEntityJson(id, part, def.formatVersion ?? '1.21.0'),
+    ]));
     const behavior = {
+      ...partFiles,
       [`entities/${fileName}.json`]: {
         format_version: def.formatVersion ?? '1.21.0',
         'minecraft:entity': {
@@ -258,7 +278,7 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
   /** 1 体ごとのクラスの土台。get / set / trigger は、この定義にあるプロパティ・イベントしか受け付けない */
   class Definition {
     static readonly id = id;
-    static readonly definition = def as EntityDefinition<PropertyClass, EventRef>;
+    static readonly definition = def as EntityDefinition<PropertyClass, EventRef, PartClass>;
     static readonly propertyName = propertyName;
     static readonly eventName = eventName;
     static readonly toFiles = toFiles;
@@ -338,6 +358,11 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
     }
 
     /** プロパティを読む */
+    /** 部位の状態（体力・壊れているか）と操作 */
+    part(part: PT): PartHandle {
+      return partHandle(this as never, part);
+    }
+
     get<T extends P>(property: T): ValueOf<T> {
       return this.entity.getProperty(propertyName(property)) as ValueOf<T>;
     }
@@ -377,6 +402,12 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
      * 変更したいときは system.run(() => …) で次の tick に回す（その時点でエンティティはもう無い）
      */
     onRemove?(): void;
+    /** 部位にダメージが入った。damage は本体に伝えた量（倍率を掛けたあと）。壊れた部位には呼ばれない */
+    onPartHurt?(part: PT, damage: number, ev: EntityHurtAfterEvent): void;
+    /** 部位が壊れた（health を決めた部位だけ） */
+    onPartBreak?(part: PT): void;
+    /** 壊れた部位が restore() で戻った */
+    onPartRestore?(part: PT): void;
   }
   return Definition;
 }

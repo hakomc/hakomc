@@ -53,6 +53,7 @@ it('enrages after 240 damage', () => {
 | Mob attack damage to players scales with difficulty; Peaceful = 0 | |
 | Creative / Spectator players take no damage | |
 | `world.beforeEvents.entityHurt` can cancel or change damage | |
+| Death is decided when the damage is applied; restoring health in `afterEvents.entityHurt` does not prevent it | |
 | Riders sit on seats rotated by the vehicle's body yaw | Multi-part hitboxes |
 | `applyImpulse` on a player throws | |
 | Errors thrown in timers / event handlers are rethrown from `sim.tick()` | Bugs fail the test instead of disappearing |
@@ -63,7 +64,7 @@ it('enrages after 240 damage', () => {
 | --- | --- |
 | `tick(n)` / `tickAsync(n)` / `tickUntil(pred, max)` | Advance time. Order per tick: physics → timers → property flush. Use `tickAsync` for code that `await`s (`sleep`, `waitTicks`) |
 | `reset({ all })` | Clear entities and logs, tick back to 0. Subscriptions and `runInterval`s registered by your modules stay unless `all: true` |
-| `defineEntityType(id, def)` / `loadEntityJson(json)` | Register health, families, properties, seats, physics, `set_property` events — by hand or from a behavior-pack entity JSON |
+| `defineEntityType(id, def)` / `loadEntityJson(json)` / `loadEntityClass(cls)` | Register health, families, properties, seats, physics, `set_property` events — by hand, from a behavior-pack entity JSON, or every JSON of a [`hakomc/entity`](entity.md) class (parts included) |
 | `spawn(id, loc)` / `spawnPlayer(name, loc, { gameMode })` | Returns the real `Entity` / `Player` types |
 | `respawn(player)` / `hurt(target, amount, opts)` | `hurt` simulates a vanilla hit: fires `entityHitEntity` (melee with `damagingEntity`) and goes through `beforeEvents.entityHurt` even with 0 damage |
 | `scriptEvent(id, msg, { sourceEntity })` / `entityEvent(entity, name)` / `emit(path, payload)` | Fire `/scriptevent`, `/event entity`, or any signal |
@@ -130,6 +131,7 @@ it('240 ダメージで怒る', () => {
 | モブからプレイヤーへの攻撃は難易度で増減し、ピースフルでは 0 | |
 | クリエイティブ / スペクテイターのプレイヤーはダメージを受けない | |
 | `world.beforeEvents.entityHurt` でダメージを取り消し・変更できる | |
+| 死ぬかどうかはダメージの時点で決まり、`afterEvents.entityHurt` の中で体力を戻しても取り消せない | |
 | 座席の乗客は、乗り物の体の向きで回した位置に乗る | 複数部位の当たり判定 |
 | プレイヤーへの `applyImpulse` は例外 | |
 | タイマーやイベントハンドラ内の例外は `sim.tick()` から投げ直される | バグが消えずにテストの失敗として出る |
@@ -140,7 +142,7 @@ it('240 ダメージで怒る', () => {
 | --- | --- |
 | `tick(n)` / `tickAsync(n)` / `tickUntil(pred, max)` | 時間を進める。1 tick の順番は 物理 → タイマー → プロパティの反映。`await` を含むコード（`sleep`・`waitTicks`）は `tickAsync` で進める |
 | `reset({ all })` | エンティティと記録を消して tick を 0 に戻す。モジュールが登録した購読や `runInterval` は、`all: true` でなければ残る |
-| `defineEntityType(id, def)` / `loadEntityJson(json)` | 体力・ファミリー・プロパティ・座席・物理・`set_property` イベントを登録する。手で書くか、ビヘイビアパックの entity JSON から読み込む |
+| `defineEntityType(id, def)` / `loadEntityJson(json)` / `loadEntityClass(cls)` | 体力・ファミリー・プロパティ・座席・物理・`set_property` イベントを登録する。手で書くか、ビヘイビアパックの entity JSON から、または [`hakomc/entity`](entity.md) のクラスの JSON（部位も含む）をまとめて読み込む |
 | `spawn(id, loc)` / `spawnPlayer(name, loc, { gameMode })` | 本物の `Entity` / `Player` の型を返す |
 | `respawn(player)` / `hurt(target, amount, opts)` | `hurt` はバニラの攻撃の再現。`damagingEntity` 付きの近接攻撃なら `entityHitEntity` も発火し、0 ダメージでも `beforeEvents.entityHurt` を通る |
 | `scriptEvent(id, msg, { sourceEntity })` / `entityEvent(entity, name)` / `emit(path, payload)` | `/scriptevent`・`/event entity`・任意のイベントを発火する |

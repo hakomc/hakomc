@@ -6,3 +6,5 @@ export { buildPack, definePack, type PackDefinition } from './pack';
 export * from './generated/components';
 export { type LastKnown, type LoadReason } from './runtime';
 export { Timeline, type CancelReason, type Steps, type TimelineOptions } from './timeline';
+export { Part, PartBase, type PartClass, type PartOptions } from './part';
+export { type PartHandle } from './parts-runtime';
