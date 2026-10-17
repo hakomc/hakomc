@@ -100,6 +100,21 @@ function scan() {
   }
 }
 
+/**
+ * その個体の段取りを全て止める。
+ * 1 つの後片付け（finally / onCancel）が例外を投げても、ログに出して残りを止め続ける
+ * （死亡・削除の処理の途中なので、ここで投げ直すと残りの段取りが止まらないまま残ってしまうため）
+ */
+function cancelTimelines(obj: HookTarget, reason: 'died' | 'removed') {
+  for (const t of obj.timelines ?? []) {
+    try {
+      t.cancel(reason);
+    } catch (e) {
+      console.error('[hakomc/entity] timeline の後片付けで例外:', e);
+    }
+  }
+}
+
 function snapshot(entry: Entry, obj: HookTarget) {
   const e = obj.entity;
   const properties: LastKnown['properties'] = {};
@@ -151,6 +166,8 @@ function install() {
     if (!entry || !obj) return;
     const last = entry.last.get(id) ?? { location: { x: 0, y: 0, z: 0 }, dimensionId: '', properties: {} };
     try {
+      // 段取りを先に止める（finally の後片付けが、onDie より前に動く）
+      cancelTimelines(obj, 'died');
       obj.onDie?.(ev, last);
     } finally {
       let valid = false;
@@ -168,6 +185,8 @@ function install() {
     const obj = entry.instances.get(id);
     forget(entry, id);
     obj?.onRemove?.();
+    // 段取りの後片付け（finally）は世界を変更することが多いので、before イベントの外（次の tick）で止める
+    if (obj?.timelines?.some((t) => t.running)) system.run(() => cancelTimelines(obj, 'removed'));
   });
   after.entityRemove.subscribe((ev) => {
     const entry = registry().get(ev.typeId);
@@ -181,19 +200,32 @@ function install() {
   system.runInterval(() => {
     const errors: unknown[] = [];
     for (const entry of registry().values()) {
-      if (!entry.hasTick && !entry.hasDie) continue;
       for (const [id, obj] of entry.instances) {
+        // 毎 tick・全個体で通る所なので、配列を作らずに確かめる
+        const hasRunning = obj.timelines?.some((t) => t.running) ?? false;
+        if (!entry.hasTick && !entry.hasDie && !hasRunning) continue;
         if (!isValid(obj.entity)) {
           forget(entry, id);
           continue;
         }
+        // 1 体の例外で、ほかの個体の処理を止めない
         try {
           if (entry.hasDie) snapshot(entry, obj);
           obj.onTick?.();
         } catch (e) {
-          // 1 体の例外で、ほかの個体の処理を止めない
           console.error(`[hakomc/entity] ${entry.cls.name}.onTick (entity ${id}):`, e);
           errors.push(e);
+        }
+        // onTick の中で始めた段取りは、始めた時点で最初の yield まで進んでいる。
+        // 同じ tick にもう一度進めないことは Timeline.advance が確かめる
+        for (const t of obj.timelines ?? []) {
+          if (!t.running) continue;
+          try {
+            t.advance();
+          } catch (e) {
+            console.error(`[hakomc/entity] ${entry.cls.name} の timeline (entity ${id}):`, e);
+            errors.push(e);
+          }
         }
       }
     }

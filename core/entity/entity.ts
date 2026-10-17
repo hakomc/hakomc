@@ -1,5 +1,7 @@
 import type { Entity, EntityDieAfterEvent, EntityHitEntityAfterEvent, EntityHurtAfterEvent, EntitySpawnAfterEvent, PlayerInteractWithEntityAfterEvent } from '@minecraft/server';
-import { instanceOf, instancesOf, register, type LastKnown, type LoadReason, type RegisteredClass } from './runtime';
+import { system } from '@minecraft/server';
+import { instanceOf, instancesOf, register, registry, type LastKnown, type LoadReason, type RegisteredClass } from './runtime';
+import { Timeline, type Clock, type Steps, type TimelineOptions, type WaitRequest } from './timeline';
 import type { Component, EventRef } from './component';
 import { EntityEvent, type GroupClass } from './event';
 import type { PropertyClass, ValueOf } from './property';
@@ -290,8 +292,49 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
     }
 
     readonly entity: Entity;
+    /** this.timeline(...) で作った段取り */
+    readonly timelines: Timeline<any>[] = [];
+    /** @internal timeline の時計 */
+    readonly clock: Clock = { now: () => system.currentTick };
     constructor(e: Entity) {
       this.entity = e;
+    }
+
+    /**
+     * tick 単位の段取りを作る。フィールドの初期値として作り、start() で始める。
+     * 毎 tick 進めるのはフレームワーク（register() が必要）。
+     *
+     * ```ts
+     * charge = this.timeline(function* (t) {
+     *   this.set(Phase, 'windup');
+     *   yield* t.wait(20);
+     *   this.set(Phase, 'dash');
+     * }, { lane: 'action' });
+     * ```
+     */
+    timeline<A extends unknown[] = []>(
+      body: (this: this, t: Steps, ...args: A) => Generator<WaitRequest, unknown, unknown>,
+      options?: TimelineOptions,
+    ): Timeline<A> {
+      const t = new Timeline<A>({
+        timelines: this.timelines,
+        clock: this.clock,
+        ensureDriven: () => {
+          if (!registry().has(id)) throw new Error(`[hakomc/entity] ${this.constructor.name}（${id}）が register() されていないので、timeline を start できない。毎 tick 進めるのはフレームワークなので、定義のファイルで ${this.constructor.name}.register() を呼ぶ`);
+        },
+      }, body as never, options, this);
+      this.timelines.push(t);
+      return t;
+    }
+
+    /** 動いている段取りを全て止める（理由 'cancel'） */
+    cancelTimelines(): void {
+      for (const t of this.timelines) t.cancel();
+    }
+
+    /** 段取りのどれかが動いているか（lane を指定すると、その lane だけ） */
+    busy(lane?: string): boolean {
+      return this.timelines.some((t) => t.running && (lane === undefined || t.options.lane === lane));
     }
 
     /** プロパティを読む */

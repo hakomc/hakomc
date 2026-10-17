@@ -5,3 +5,4 @@ export { entity, EntityDefinitionError, type ClientDefinition, type EntityClass,
 export { buildPack, definePack, type PackDefinition } from './pack';
 export * from './generated/components';
 export { type LastKnown, type LoadReason } from './runtime';
+export { Timeline, type CancelReason, type Steps, type TimelineOptions } from './timeline';

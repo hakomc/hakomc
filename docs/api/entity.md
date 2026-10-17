@@ -80,6 +80,50 @@ Write only the ones you need. Each one is called on the object of that entity.
 - An exception in one entity's `onTick` does not stop the others (it is logged, then rethrown).
 - The hook parameter types are checked against the base class; write them (`ev: EntityHurtAfterEvent`), TypeScript does not infer them for methods.
 
+### Timelines
+
+Steps that span ticks — wind up, attack, recover — are written as generators. The framework advances them every tick (the class must be `register()`ed).
+
+```ts
+class Boar extends entity('demo:boar', { … }) {
+  charge = this.timeline(this.chargeSteps, { lane: 'attack' });
+
+  *chargeSteps(t: Steps, target: Player) {
+    try {
+      this.set(Phase, 'windup');
+      const goal = target.location;                 // remember where the player was
+      yield* t.wait(20);                            // 20 ticks
+      this.set(Phase, 'dash');
+      const hit = yield* t.until(() => this.stepTowards(goal), 40);   // true when reached, false after 40 ticks
+      if (hit) target.applyDamage(6, { cause: EntityDamageCause.entityAttack, damagingEntity: this.entity });
+      this.set(Phase, 'recover');
+      yield* t.wait(30);
+    } finally {
+      if (this.entity.isValid) this.set(Phase, 'idle');   // also runs when cancelled
+    }
+  }
+
+  onTick() {
+    const p = this.nearestPlayer();
+    if (p && !this.busy('attack')) this.charge.start(p);
+  }
+}
+```
+
+| | |
+| --- | --- |
+| `this.timeline(steps, { lane, onCancel })` | Create one (as a field). Pass a generator method; or write it inline with a field type: `charge: Timeline<[Player]> = this.timeline(function* (t, target) { … })` — without the type, TypeScript reports a circular reference |
+| `yield* t.wait(n)` / `yield* t.until(pred, max?)` | Wait n ticks / until `pred()` is true (checked every tick); `until` returns `false` when `max` ticks pass |
+| `t.elapsed` | Ticks since `start()` |
+| `start(...args)` | Runs up to the first `yield*` immediately. Returns `false` (and does nothing) if it is running or another timeline of the same `lane` is |
+| `interrupt(...args)` | Cancel what runs in the same lane (reason `'interrupted'`), then start |
+| `cancel()` / `running` / `lastCancelReason` | Reasons: `'cancel'`, `'interrupted'`, `'died'`, `'removed'`, `'error'` |
+| `this.busy(lane?)` / `this.cancelTimelines()` | Any timeline (of a lane) running / cancel all |
+
+- Cancelling runs the generator's `finally` and `onCancel`. Death cancels before `onDie`; removal cancels on the next tick, outside the before event, so cleanup can change the world. After death or removal the entity itself can no longer be used — check `this.entity.isValid`.
+- An exception stops only that timeline (reason `'error'`); other entities keep going.
+- Why generators instead of `async`/`await`: they run synchronously inside the tick, so the timing is exact and they can be stopped at any point. An `await` continues after the promise settles, which makes the tick it runs on hard to control (and tests would need `sim.tickAsync`).
+
 ### Using `src/pack.ts` instead
 
 If `src/index.ts` cannot run in the simulated environment (it calls something not simulated at the top level), put the list in `src/pack.ts`; it is used instead of `src/index.ts` when it exists. Registration for the hooks is still `register()`.
@@ -220,6 +264,50 @@ import './entities/morgrave';
 - **1 体につき 1 つのオブジェクト:** `Morgrave.of(entity)` は、フックに渡されるのと同じオブジェクトを返すので、フィールドも共有されます。`Morgrave.instances()` で、読み込まれている個体の一覧を得られます。
 - **例外:** ある個体の `onTick` で例外が出ても、ほかの個体は止まりません（ログに出してから投げ直します）。
 - **引数の型:** フックの引数の型は、基底クラスと照らし合わせて確認されます。ただし、メソッドの引数は TypeScript が推論しないので、`ev: EntityHurtAfterEvent` のように書いてください。
+
+### timeline（段取り）
+
+「構え → 攻撃 → 硬直」のような、何 tick にもわたる段取りは、ジェネレーターで書きます。毎 tick 進めるのはフレームワークです（クラスを `register()` しておく必要があります）。
+
+```ts
+class Boar extends entity('demo:boar', { … }) {
+  charge = this.timeline(this.chargeSteps, { lane: 'attack' });
+
+  *chargeSteps(t: Steps, target: Player) {
+    try {
+      this.set(Phase, 'windup');
+      const goal = target.location;                 // 構えた瞬間のプレイヤーの位置を覚える
+      yield* t.wait(20);                            // 20 tick 待つ
+      this.set(Phase, 'dash');
+      const hit = yield* t.until(() => this.stepTowards(goal), 40);   // 着いたら true、40 tick 過ぎたら false
+      if (hit) target.applyDamage(6, { cause: EntityDamageCause.entityAttack, damagingEntity: this.entity });
+      this.set(Phase, 'recover');
+      yield* t.wait(30);
+    } finally {
+      if (this.entity.isValid) this.set(Phase, 'idle');   // 止められたときも動く
+    }
+  }
+
+  onTick() {
+    const p = this.nearestPlayer();
+    if (p && !this.busy('attack')) this.charge.start(p);
+  }
+}
+```
+
+| | |
+| --- | --- |
+| `this.timeline(steps, { lane, onCancel })` | 作る（フィールドで）。ジェネレーターのメソッドを渡す。その場で書くときは、フィールドに型を書く: `charge: Timeline<[Player]> = this.timeline(function* (t, target) { … })`（型が無いと、TypeScript が循環参照のエラーを出す） |
+| `yield* t.wait(n)` / `yield* t.until(pred, max?)` | n tick 待つ / `pred()` が true になるまで（毎 tick 確かめて）待つ。`until` は `max` tick 過ぎると `false` を返す |
+| `t.elapsed` | `start()` してからの tick 数 |
+| `start(...args)` | その場で最初の `yield*` まで進む。動いている、または同じ `lane` の別の段取りが動いているなら、何もせず `false` |
+| `interrupt(...args)` | 同じ lane で動いているものを止めて（理由 `'interrupted'`）、始める |
+| `cancel()` / `running` / `lastCancelReason` | 止まった理由は `'cancel'`・`'interrupted'`・`'died'`・`'removed'`・`'error'` |
+| `this.busy(lane?)` / `this.cancelTimelines()` | （その lane の）段取りが動いているか / 全部止める |
+
+- **止めたとき:** ジェネレーターの `finally` と `onCancel` が動きます。死亡したときは `onDie` の前に止めます。削除のときは、次の tick に before イベントの外で止めるので、後片付けで世界を変更できます。ただし、死亡・削除のあとはエンティティ自体はもう使えないので、`this.entity.isValid` を確かめてください。
+- **例外:** 段取りの中で例外が出ても、止まるのはその段取りだけです（理由 `'error'`）。ほかの個体はそのまま進みます。
+- **ジェネレーターを使う理由:** `async` / `await` ではなくジェネレーターにしたのは、tick の中で同期的に進むので、どの tick で動くかが正確で、どこでも止められるからです。`await` の続きは Promise の解決後に動くので、どの tick で動くかを制御しにくく、テストにも `sim.tickAsync` が必要になります。
 
 ### 代わりに `src/pack.ts` を使う
 
