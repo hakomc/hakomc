@@ -238,6 +238,50 @@ describe('部位: ダメージ', () => {
   });
 });
 
+/** 胸の核が弱点の番人。殻（Back を流用）を壊すまで、核へのダメージは無効。殻が壊れたあとは 2 倍 */
+class Core extends Part('core', { seat: [0, 1.4, 1.2], size: [0.6, 0.6], damageMultiplier: 3, health: 30 }) {}
+class Warden extends entity('demo:warden', {
+  components: [health({ value: 200, max: 200 })],
+  parts: [Back, Core],
+}) {
+  partDamage(part: PartClass, damage: number) {
+    if (part !== Core) return damage;
+    if (!this.part(Back).broken) {
+      log.push('blocked');
+      return 0;
+    }
+    return damage * 2;
+  }
+  onPartHurt(part: PartClass, damage: number) { log.push(`hurt:${part.id}:${damage}`); }
+}
+Warden.register();
+
+describe('部位: ダメージを変える（partDamage）', () => {
+  beforeEach(() => sim.loadEntityClass(Warden));
+  it('0 を返すと無効: 本体にも部位の体力にも入らず、onPartHurt も呼ばれない', () => {
+    const e = sim.spawn('demo:warden', { x: 0, y: 0, z: 0 });
+    const w = Warden.of(e);
+    const p = sim.spawnPlayer('Steve', { x: 0, y: 0, z: 3 });
+    sim.hurt(w.part(Core).entity!, 5, { damagingEntity: p });
+    expect(hpOf(e)).toBe(200);
+    expect(w.part(Core).health).toBe(30);
+    expect(log).toEqual(['blocked']);
+  });
+  it('返した値に倍率を掛けて本体に伝え、部位の体力も返した値で減る。ほかの部位はそのまま', () => {
+    const e = sim.spawn('demo:warden', { x: 0, y: 0, z: 0 });
+    const w = Warden.of(e);
+    const p = sim.spawnPlayer('Steve', { x: 0, y: 0, z: 3 });
+    sim.hurt(w.part(Back).entity!, 4, { damagingEntity: p });
+    expect(w.part(Back).health).toBe(36);
+    w.part(Back).break();
+    log.length = 0;
+    sim.hurt(w.part(Core).entity!, 5, { damagingEntity: p });
+    expect(log).toEqual(['hurt:core:30']);
+    expect(hpOf(e)).toBe(200 - 10 - 30);
+    expect(w.part(Core).health).toBe(20);
+  });
+});
+
 describe('部位: 型', () => {
   it('定義に無い部位は型エラー', () => {
     class Tail extends Part('tail', { seat: [0, 0, 0], size: [1, 1] }) {}

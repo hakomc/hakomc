@@ -33,6 +33,7 @@ interface Owner extends HookTarget {
   onPartHurt?(part: PartClass, damage: number, ev: EntityHurtAfterEvent): void;
   onPartBreak?(part: PartClass): void;
   onPartRestore?(part: PartClass): void;
+  partDamage?(part: PartClass, damage: number, ev: EntityHurtAfterEvent): number;
 }
 
 const partsOf = (entry: Entry) => (entry.cls.definition as { parts?: readonly PartClass[] }).parts ?? [];
@@ -180,13 +181,16 @@ export function handlePartHurt(ev: EntityHurtAfterEvent, ensureOwner: (entry: En
   const owner = ensureOwner(entry, body) as Owner;
   const handle = partHandle(owner, part);
   if (handle.broken) return true;
-  const dealt = ev.damage * (part.options.damageMultiplier ?? 1);
+  // ユーザーが変えられる（0 で無効）。部位の体力も、この値で減る
+  const damage = owner.partDamage ? owner.partDamage(part, ev.damage, ev) : ev.damage;
+  if (!(damage > 0)) return true;
+  const dealt = damage * (part.options.damageMultiplier ?? 1);
   body.applyDamage(dealt, { cause: src.cause, ...(attacker ? { damagingEntity: attacker } : {}) });
   owner.onPartHurt?.(part, dealt, ev);
   const max = part.options.health;
   if (max !== undefined && isValid(body)) {
     const hp = readHp(body);
-    const left = (hp[part.id] ?? max) - ev.damage;
+    const left = (hp[part.id] ?? max) - damage;
     if (left <= 0) handle.break();
     else writeHp(body, { ...hp, [part.id]: left });
   }

@@ -156,6 +156,16 @@ Golem.register();
 - Part health and the broken state are saved on the body (dynamic property) and survive reloads. When the body is loaded, parts are put back on their seats in order; a missing one is spawned again.
 - The body dying removes its parts. A part without its body is removed after two checks (every 40 ticks).
 - `this.part(Back)`: `entity`, `health`, `maxHealth`, `broken`, `break()`, `restore()`. Hooks: `onPartHurt(part, damage, ev)`, `onPartBreak(part)`, `onPartRestore(part)`.
+- `partDamage(part, damage, ev)` changes the damage to a part before it goes to the body. `damage` is before the multiplier; the returned value is multiplied and passed to the body, and the part's health drops by it. Returning 0 cancels it (nothing to the body or the part, no `onPartHurt`). Use it for a weak spot that cannot be hit until some condition is met — the condition stays in your own state (properties etc.):
+
+```ts
+class Boss extends entity('demo:boss', { properties: [Phase], parts: [Shell, Heart], … }) {
+  partDamage(part: PartClass, damage: number) {
+    if (part === Heart && this.get(Phase) !== 'exposed') return 0;   // the heart cannot be hit until it is exposed
+    return damage;
+  }
+}
+```
 - An attack hits the nearest hitbox along the line of sight, so a part buried in the body's hitbox cannot be hit — the body is hit instead. The build warns when 50% or more of a part's hitbox is inside the body's at some facing (checked every 15°; hitboxes do not rotate, only the seat position does). Move the seat outwards or make the body's hitbox smaller.
 - In tests, `sim.loadEntityClass(Golem)` loads the body and the parts.
 
@@ -492,6 +502,19 @@ Golem.register();
 - **スクリプトからの操作:**
   - `this.part(Back)` で `entity`・`health`・`maxHealth`・`broken`・`break()`・`restore()` が使えます。
   - フックは `onPartHurt(part, damage, ev)`・`onPartBreak(part)`・`onPartRestore(part)` です。
+- **ダメージを変える:**
+  - `partDamage(part, damage, ev)` で、部位へのダメージを本体に伝える前に変えられます。`damage` は倍率を掛ける前の値です。
+  - 返した値に倍率を掛けて本体に伝え、部位の体力も返した値で減ります。0 を返すと無効になります（本体にも部位にも入らず、`onPartHurt` も呼ばれません）。
+  - 条件を満たすまで叩けない弱点に使います。条件は、自分のプロパティなどで持ってください。
+
+```ts
+class Boss extends entity('demo:boss', { properties: [Phase], parts: [Shell, Heart], … }) {
+  partDamage(part: PartClass, damage: number) {
+    if (part === Heart && this.get(Phase) !== 'exposed') return 0;   // むき出しになるまで、心臓は叩けない
+    return damage;
+  }
+}
+```
 - **本体に埋まった部位:** 攻撃は視線上でいちばん手前の当たり判定に当たるので、本体の当たり判定に埋まった部位は叩けず、本体に当たります。そのため、ある向きで部位の当たり判定の 50% 以上が本体の中に入る場合は、ビルド時に警告します（15° ごとに確かめます。当たり判定の箱自体は回らず、座席の位置だけが回ります）。座席を外へ出すか、本体の当たり判定を小さくしてください。
 - **テスト:** `sim.loadEntityClass(Golem)` で、本体と部位の JSON をまとめて読み込めます。
 
