@@ -249,6 +249,8 @@ export class MockEntity {
   }
   remove() {
     if (!this._valid) return;
+    // 実機と同じく、消える直前（まだ読める状態）に beforeEvents.entityRemove が来る
+    signals.worldBefore.entityRemove.emit({ removedEntity: this });
     this._valid = false;
     state.entities.delete(this.id);
     for (const r of this._riders) r._vehicle = undefined;

@@ -48,6 +48,7 @@ it('enrages after 240 damage', () => {
 | --- | --- |
 | `setProperty` values become readable only at the end of the tick | Reading back right after writing returns the old value |
 | Removed / killed entities are invalid; most members throw | `entityDie`'s `deadEntity` can no longer be read |
+| `remove()` fires `beforeEvents.entityRemove` (still readable) then `afterEvents.entityRemove` | |
 | Players stay valid after death (`sim.respawn` fires `playerSpawn`) | |
 | Mob attack damage to players scales with difficulty; Peaceful = 0 | |
 | Creative / Spectator players take no damage | |
@@ -64,7 +65,7 @@ it('enrages after 240 damage', () => {
 | `reset({ all })` | Clear entities and logs, tick back to 0. Subscriptions and `runInterval`s registered by your modules stay unless `all: true` |
 | `defineEntityType(id, def)` / `loadEntityJson(json)` | Register health, families, properties, seats, physics, `set_property` events — by hand or from a behavior-pack entity JSON |
 | `spawn(id, loc)` / `spawnPlayer(name, loc, { gameMode })` | Returns the real `Entity` / `Player` types |
-| `respawn(player)` / `hurt(target, amount, opts)` | `hurt` simulates a vanilla hit and goes through `beforeEvents.entityHurt` even with 0 damage |
+| `respawn(player)` / `hurt(target, amount, opts)` | `hurt` simulates a vanilla hit: fires `entityHitEntity` (melee with `damagingEntity`) and goes through `beforeEvents.entityHurt` even with 0 damage |
 | `scriptEvent(id, msg, { sourceEntity })` / `entityEvent(entity, name)` / `emit(path, payload)` | Fire `/scriptevent`, `/event entity`, or any signal |
 | `setGround(y)` / `setBlock(loc, id)` / `setDifficulty(d)` | World setup |
 | `logs(kind, where)` / `log` / `errors` | Recorded camera, input, action bar, sounds, particles, commands, animations, damage, landings… |
@@ -124,6 +125,7 @@ it('240 ダメージで怒る', () => {
 | --- | --- |
 | `setProperty` の値は tick の終わりまで読めない | 書いた直後に読み直すと古い値が返る |
 | remove / 死亡したエンティティは無効になり、ほとんどのメンバーが例外を投げる | `entityDie` の `deadEntity` からはもうデータを読めない |
+| `remove()` では `beforeEvents.entityRemove`（まだ読める）→ `afterEvents.entityRemove` の順に来る | |
 | プレイヤーは死んでも有効なまま（`sim.respawn` で `playerSpawn` が発火） | |
 | モブからプレイヤーへの攻撃は難易度で増減し、ピースフルでは 0 | |
 | クリエイティブ / スペクテイターのプレイヤーはダメージを受けない | |
@@ -140,7 +142,7 @@ it('240 ダメージで怒る', () => {
 | `reset({ all })` | エンティティと記録を消して tick を 0 に戻す。モジュールが登録した購読や `runInterval` は、`all: true` でなければ残る |
 | `defineEntityType(id, def)` / `loadEntityJson(json)` | 体力・ファミリー・プロパティ・座席・物理・`set_property` イベントを登録する。手で書くか、ビヘイビアパックの entity JSON から読み込む |
 | `spawn(id, loc)` / `spawnPlayer(name, loc, { gameMode })` | 本物の `Entity` / `Player` の型を返す |
-| `respawn(player)` / `hurt(target, amount, opts)` | `hurt` はバニラの攻撃の再現。0 ダメージでも `beforeEvents.entityHurt` を通る |
+| `respawn(player)` / `hurt(target, amount, opts)` | `hurt` はバニラの攻撃の再現。`damagingEntity` 付きの近接攻撃なら `entityHitEntity` も発火し、0 ダメージでも `beforeEvents.entityHurt` を通る |
 | `scriptEvent(id, msg, { sourceEntity })` / `entityEvent(entity, name)` / `emit(path, payload)` | `/scriptevent`・`/event entity`・任意のイベントを発火する |
 | `setGround(y)` / `setBlock(loc, id)` / `setDifficulty(d)` | 世界の準備 |
 | `logs(kind, where)` / `log` / `errors` | カメラ・入力制限・アクションバー・音・パーティクル・コマンド・アニメーション・ダメージ・着地などの記録 |

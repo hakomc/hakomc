@@ -1,4 +1,5 @@
-import type { Entity } from '@minecraft/server';
+import type { Entity, EntityDieAfterEvent, EntityHitEntityAfterEvent, EntityHurtAfterEvent, EntitySpawnAfterEvent, PlayerInteractWithEntityAfterEvent } from '@minecraft/server';
+import { instanceOf, instancesOf, register, type LastKnown, type LoadReason, type RegisteredClass } from './runtime';
 import type { Component, EventRef } from './component';
 import { EntityEvent, type GroupClass } from './event';
 import type { PropertyClass, ValueOf } from './property';
@@ -59,8 +60,8 @@ export interface PackFiles {
   lang: Record<string, string[]>;
 }
 
-/** ビルド時の検査で見つかった問題 */
-export class EntityDefinitionError extends Error {}
+import { EntityDefinitionError } from './errors';
+export { EntityDefinitionError };
 
 const snake = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[^a-zA-Z0-9]+/g, '_').toLowerCase();
 const isEventClass = (v: unknown): v is EventRef => typeof v === 'function' && v.prototype instanceof EntityEvent;
@@ -265,9 +266,27 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
       return !!e && e.typeId === id;
     }
 
-    /** ゲームのエンティティから、このクラスのオブジェクトを作る */
+    /**
+     * ゲームのエンティティから、このクラスのオブジェクトを得る。
+     * register() 済みなら、フックに渡されるのと同じオブジェクト（フィールドも共有）を返す
+     */
     static of<T extends Definition>(this: new (entity: Entity) => T, e: Entity): T {
+      const registered = instanceOf(e);
+      if (registered instanceof this) return registered as T;
       return new this(e);
+    }
+
+    /**
+     * フック（onSpawn・onHurt・onTick など）を有効にする。定義のファイルの最後で呼ぶ。
+     * ビルド時は、ここで登録したエンティティの JSON が作られる。
+     */
+    static register(this: abstract new (entity: Entity) => Definition): void {
+      register(this as unknown as RegisteredClass);
+    }
+
+    /** 今いる、このクラスの個体（register() 済みのとき） */
+    static instances<T extends Definition>(this: abstract new (entity: Entity) => T): T[] {
+      return instancesOf(this as unknown as RegisteredClass) as unknown as T[];
     }
 
     readonly entity: Entity;
@@ -289,6 +308,32 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
     trigger(event: E): void {
       this.entity.triggerEvent(eventName(event));
     }
+
+    // ---- フック（register() したクラスで、書いたものだけが呼ばれる） ----
+    /** 新しく出現した（スポーンエッグ・召喚・繁殖など） */
+    onSpawn?(ev: EntitySpawnAfterEvent): void;
+    /** 読み込まれた（チャンクの読み込み、ワールドの起動、/reload）。出現でない最初の 1 回。reason で、どこで見つかったかが分かる */
+    onLoad?(reason: LoadReason): void;
+    /** ダメージを受けた */
+    onHurt?(ev: EntityHurtAfterEvent): void;
+    /** 攻撃を当てた */
+    onHit?(ev: EntityHitEntityAfterEvent): void;
+    /** プレイヤーに右クリックされた */
+    onInteract?(ev: PlayerInteractWithEntityAfterEvent): void;
+    /** 毎 tick */
+    onTick?(): void;
+    /**
+     * 死んだ。this.entity はもう読めない（getProperty などは例外になる）ので、
+     * 直前の tick に読んだ値（位置・ディメンション・プロパティ）を last で渡す。
+     * ドロップや演出は、last.location と world.getDimension(last.dimensionId) を使う
+     */
+    onDie?(ev: EntityDieAfterEvent, last: LastKnown): void;
+    /**
+     * 消える・読み込まれなくなる直前（死亡後に消えるときも呼ばれる）。this.entity はまだ読める。
+     * before イベントの中なので、世界を変更する操作（スポーン・setProperty・triggerEvent・コマンドなど）は例外になる。
+     * 変更したいときは system.run(() => …) で次の tick に回す（その時点でエンティティはもう無い）
+     */
+    onRemove?(): void;
   }
   return Definition;
 }

@@ -327,3 +327,65 @@ describe('behaviorPacker: 定義（src/pack.ts）から JSON を作る', () => {
     expect(exists('dist/behavior_pack/entities')).toBe(false);
   });
 });
+
+describe('behaviorPacker: register() したエンティティを src/index.ts から集める', () => {
+  const ENTITY = JSON.stringify(join(process.cwd(), 'core/entity/index.ts'));
+  const writeEntity = (name: string) => write(`src/entities/${name}.ts`, `
+    import { entity, health } from ${ENTITY};
+    export class E extends entity('hako:${name}', { name: { en_US: '${name}' }, components: [health({ value: 5 })] }) {
+      onTick() {}
+    }
+    E.register();
+  `);
+  it('pack.ts が無ければ、スクリプトの入口で register() されたエンティティの JSON を作る', async () => {
+    writeEntity('alpha');
+    writeEntity('beta');
+    writeEntity('unused');
+    write('src/index.ts', `
+      import { world, system } from '@minecraft/server';
+      import './entities/alpha';
+      import './entities/beta';
+      // トップレベルの普通の処理も模擬環境で動く
+      world.afterEvents.entityHurt.subscribe(() => {});
+      system.runInterval(() => {}, 20);
+    `);
+    const ctx = await build({ name: 'test', uuid: UUID });
+    expect(exists('dist/behavior_pack/entities/alpha.json')).toBe(true);
+    expect(exists('dist/behavior_pack/entities/beta.json')).toBe(true);
+    // import していないものは作らない
+    expect(exists('dist/behavior_pack/entities/unused.json')).toBe(false);
+    expect(read('dist/resource_pack/texts/en_US.lang')).toBe('entity.hako:alpha.name=alpha\nentity.hako:beta.name=beta\n');
+    expect(ctx.warn).not.toHaveBeenCalled();
+    // 2 回目のビルドでも同じ（登録は読み込みのたびに作り直す）
+    await build({ name: 'test', uuid: UUID });
+    expect(exists('dist/behavior_pack/entities/alpha.json')).toBe(true);
+  });
+  it('エンティティを使っていないスクリプトが模擬環境で動かなくても、止めずに警告だけ出す', async () => {
+    write('src/index.ts', `
+      import { world } from '@minecraft/server';
+      world.getAllPlayers()[0].nonexistent.call();
+    `);
+    const ctx = await build({ name: 'test', uuid: UUID });
+    expect(ctx.warn).toHaveBeenCalledWith(expect.stringContaining('src/index.ts を模擬環境で読み込んだが、失敗した'));
+    expect(exists('dist/behavior_pack/manifest.json')).toBe(true);
+    expect(exists('dist/behavior_pack/entities')).toBe(false);
+  });
+  it('register() した後で失敗したら、JSON が欠けるのでビルドを止める', async () => {
+    writeEntity('alpha');
+    write('src/index.ts', `
+      import './entities/alpha';
+      throw new Error('boom at top level');
+    `);
+    await expect(build({ name: 'test', uuid: UUID })).rejects.toThrow('boom at top level');
+  });
+  it('定義の間違いはビルドを止める', async () => {
+    write('src/index.ts', `
+      import { entity } from ${ENTITY};
+      class A extends entity('hako:same') {}
+      class B extends entity('hako:same') {}
+      A.register();
+      B.register();
+    `);
+    await expect(build({ name: 'test', uuid: UUID })).rejects.toThrow('hako:same');
+  });
+});
