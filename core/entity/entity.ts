@@ -1,4 +1,4 @@
-import type { Entity, Player, EntityDieAfterEvent, EntityHitEntityAfterEvent, EntityHurtAfterEvent, EntitySpawnAfterEvent, PlayerInteractWithEntityAfterEvent } from '@minecraft/server';
+import type { Entity, Player, Vector3, EntityDieAfterEvent, EntityHitEntityAfterEvent, EntityHurtAfterEvent, EntitySpawnAfterEvent, PlayerInteractWithEntityAfterEvent } from '@minecraft/server';
 import { system } from '@minecraft/server';
 import { instanceOf, instancesOf, register, registry, type LastKnown, type LoadReason, type RegisteredClass } from './runtime';
 import { Timeline, type Clock, type Steps, type TimelineOptions, type WaitRequest } from './timeline';
@@ -8,6 +8,7 @@ import type { PropertyClass, ValueOf } from './property';
 import { bodyRideable, hiddenBones, partBrokenProperty, partEntityJson, partOverlapWarnings, partResourceFiles, type PartClass } from './part';
 import { partHandle, type PartHandle } from './parts-runtime';
 import { grab, type GrabOptions, type Hold } from './grab';
+import { hit, leap, type HitOptions, type LeapOptions, type LeapResult } from './motion';
 
 /** 言語ごとの文字列（en_US / ja_JP など） */
 export type Localized = Partial<Record<'en_US' | 'ja_JP' | (string & {}), string>>;
@@ -53,6 +54,12 @@ export interface EntityDefinition<P extends PropertyClass, E extends EventRef, P
   summonable?: boolean;
   /** リソースパック側（見た目）。無ければ client_entity は作らない */
   client?: ClientDefinition;
+  /**
+   * このエンティティのバニラの攻撃（minecraft:behavior.melee_attack など）のダメージを取り消す。
+   * 追いかける・向く、といった AI はそのまま使い、ダメージは this.dealDamage() で与えるとき用。
+   * 取り消すので、ノックバック・赤い点滅・音も出ない
+   */
+  cancelVanillaHits?: boolean;
   /** 既定 '1.21.0' */
   formatVersion?: string;
   /** そのまま description に足す内容（runtime_identifier など） */
@@ -403,7 +410,20 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
       return grab(this.entity, player, options);
     }
 
-        /** 部位の状態（体力・壊れているか）と操作 */
+        /**
+     * 決めた地点へ跳ぶ。timeline の中で `const r = yield* this.leapTo(t, goal)` と使う。
+     * 着地するまで待ち、着地したか・何 tick かかったかを返す
+     */
+    leapTo(t: Steps, goal: Vector3, options?: LeapOptions): Generator<WaitRequest, LeapResult, unknown> {
+      return leap(this.entity, t, goal, options);
+    }
+
+    /** ダメージを与える（cancelVanillaHits でも取り消されない）。ノックバックも付けられる */
+    dealDamage(target: Entity, amount: number, options?: HitOptions): boolean {
+      return hit(this.entity, target, amount, options);
+    }
+
+    /** 部位の状態（体力・壊れているか）と操作 */
     part(part: PT): PartHandle {
       return partHandle(this as never, part);
     }

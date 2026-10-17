@@ -8,6 +8,7 @@
 import { system, world, type Entity } from '@minecraft/server';
 import { registry, type Entry, type HookTarget, type LastKnown, type LoadReason, type RegisteredClass } from './registry';
 import { installGrab } from './grab';
+import { isScriptedHit } from './motion';
 import { handlePartGone, handlePartHurt, removeParts, sweepOrphanParts, syncParts } from './parts-runtime';
 
 export { registry, resetRegistry, type LastKnown, type LoadReason, type RegisteredClass } from './registry';
@@ -151,6 +152,21 @@ function install() {
     const entry = entryOf(ev.entity);
     if (entry) ensure(entry, ev.entity, 'chunk');
   });
+  // cancelVanillaHits: バニラの攻撃を取り消す（this.dealDamage() のダメージは通す）
+  world.beforeEvents.entityHurt.subscribe((ev) => {
+    if (isScriptedHit()) return;
+    const src = ev.damageSource.damagingEntity;
+    if (!src) return;
+    let typeId: string;
+    try {
+      typeId = src.typeId;
+    } catch {
+      return;
+    }
+    const entry = registry().get(typeId);
+    if ((entry?.cls.definition as { cancelVanillaHits?: boolean } | undefined)?.cancelVanillaHits) ev.cancel = true;
+  });
+
   after.entityHurt.subscribe((ev) => {
     // 部位へのダメージは本体に伝える
     if (handlePartHurt(ev, (en, body) => ensure(en, body, 'late'))) return;
