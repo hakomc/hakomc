@@ -27,6 +27,8 @@ export type LoadReason = 'chunk' | 'startup' | 'late';
 /** フックを持つインスタンス（メソッドは全て省略可能） */
 export interface HookTarget {
   readonly entity: Entity;
+  /** this.face(...) で決めた、向く先（毎 tick 少しずつ向く） */
+  readonly facing?: { target: () => { x: number, y: number, z: number } | undefined, turnSpeed: number };
   /** this.timeline(...) で作った段取り */
   readonly timelines?: ReadonlyArray<{ readonly running: boolean, advance(): void, cancel(reason: CancelReason): void }>;
   onSpawn?(ev: unknown): void;

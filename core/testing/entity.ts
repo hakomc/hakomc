@@ -40,6 +40,24 @@ export class HealthComponent {
   resetToMinValue() { this.e._chk(); this.e._hp = 0; }
 }
 
+/** minecraft:movement（属性）。現在の値を変えられる。default は entity JSON の値 */
+export class MovementComponent {
+  static readonly componentId = 'minecraft:movement';
+  readonly typeId = 'minecraft:movement';
+  /** @internal */
+  constructor(readonly e: MockEntity) {}
+  get entity() { return this.e; }
+  get isValid() { return this.e.isValid; }
+  get currentValue() { this.e._chk(); return this.e._move ?? this.defaultValue; }
+  get defaultValue() { return this.e._def.movement ?? 0; }
+  get effectiveMax() { return Number.MAX_VALUE; }
+  get effectiveMin() { return 0; }
+  setCurrentValue(v: number) { this.e._chk(); this.e._move = v; record('movement', { entityId: this.e.id, value: v }); return true; }
+  resetToDefaultValue() { this.e._chk(); this.e._move = undefined; record('movement', { entityId: this.e.id, value: this.defaultValue }); }
+  resetToMaxValue() { this.resetToDefaultValue(); }
+  resetToMinValue() { this.setCurrentValue(0); }
+}
+
 export class RideableComponent {
   static readonly componentId = 'minecraft:rideable';
   readonly typeId = 'minecraft:rideable';
@@ -99,6 +117,8 @@ export class MockEntity {
   _tags = new Set<string>();
   _effects = new Map<string, MockEffect>();
   _riders: MockEntity[] = [];
+  /** minecraft:movement の現在の値（undefined なら既定の値） */
+  _move: number | undefined;
   _vehicle?: MockEntity;
   _dim: MockDimension;
   readonly _def: EntityTypeDef;
@@ -210,6 +230,7 @@ export class MockEntity {
     const full = stripNs(id);
     if (full === 'minecraft:health') return new HealthComponent(this);
     if (full === 'minecraft:rideable') return this._def.seats ? new RideableComponent(this) : undefined;
+    if (full === 'minecraft:movement') return this._def.movement !== undefined ? new MovementComponent(this) : undefined;
     if (full === 'minecraft:riding') return this._vehicle ? new RidingComponent(this) : undefined;
     return undefined;
   }

@@ -9,6 +9,7 @@ import { bodyRideable, hiddenBones, partBrokenProperty, partEntityJson, partOver
 import { partHandle, type PartHandle } from './parts-runtime';
 import { grab, type GrabOptions, type Hold } from './grab';
 import { hit, leap, type HitOptions, type LeapOptions, type LeapResult } from './motion';
+import { holdStill, toFacingTarget, type FaceTarget, type Still } from './still';
 
 /** 言語ごとの文字列（en_US / ja_JP など） */
 export type Localized = Partial<Record<'en_US' | 'ja_JP' | (string & {}), string>>;
@@ -108,6 +109,18 @@ export interface EntityClass {
  * Morgrave.of(entity).roar();
  * ```
  */
+/** timeline の holdStill: 段取りを、止まる → 段取り → 動き出す、で包む */
+function stillWrapped<A extends unknown[]>(body: (this: { holdStill(): Still }, t: Steps, ...args: A) => Generator<WaitRequest, unknown, unknown>) {
+  return function* (this: { holdStill(): Still }, t: Steps, ...args: A) {
+    const still = this.holdStill();
+    try {
+      return yield* body.call(this, t, ...args);
+    } finally {
+      still.release();
+    }
+  };
+}
+
 export function entity<const P extends PropertyClass = never, const E extends EventRef = never, const PT extends PartClass = never>(id: string, def: EntityDefinition<P, E, PT> = {}) {
   if (!/^[a-z0-9_.-]+:[a-z0-9_.-]+$/.test(id)) throw new EntityDefinitionError(`エンティティの識別子 "${id}" は「名前空間:名前」の形で、小文字・数字・_ . - だけにする`);
   const ns = id.split(':')[0];
@@ -358,6 +371,8 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
     readonly entity: Entity;
     /** this.timeline(...) で作った段取り */
     readonly timelines: Timeline<any>[] = [];
+    /** @internal this.face(...) の向く先 */
+    facing?: { target: () => Vector3 | undefined, turnSpeed: number };
     /** @internal timeline の時計 */
     readonly clock: Clock = { now: () => system.currentTick };
     constructor(e: Entity) {
@@ -386,9 +401,25 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
         ensureDriven: () => {
           if (!registry().has(id)) throw new Error(`[hakomc/entity] ${this.constructor.name}（${id}）が register() されていないので、timeline を start できない。毎 tick 進めるのはフレームワークなので、定義のファイルで ${this.constructor.name}.register() を呼ぶ`);
         },
-      }, body as never, options, this);
+      }, (options?.holdStill ? stillWrapped(body as never) : body) as never, options, this);
       this.timelines.push(t);
       return t;
+    }
+
+    /**
+     * その場で止まる（AI に動かされない）。release() で動き出す。入れ子にしてよい。
+     * 全部 release したら、this.face の向く先も消す
+     */
+    holdStill(): Still {
+      return holdStill(this, this.entity, () => { this.facing = undefined; });
+    }
+
+    /**
+     * 向く先を決める。毎 tick、turnSpeed 度（既定 30）まで回って向く。undefined で向くのをやめる。
+     * エンティティを渡すと、その位置を追って向き続ける
+     */
+    face(target: FaceTarget | undefined, turnSpeed = 30): void {
+      this.facing = target === undefined ? undefined : { target: toFacingTarget(target), turnSpeed };
     }
 
     /** 動いている段取りを全て止める（理由 'cancel'） */

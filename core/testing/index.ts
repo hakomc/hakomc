@@ -83,6 +83,7 @@ function typeFromEntityJson(json: any): [string, EntityTypeDef] {
     seats,
     physics: !!comps['minecraft:physics'],
     collision: box ? { width: box.width, height: box.height } : undefined,
+    movement: comps['minecraft:movement']?.value,
     events,
   }];
 }

@@ -223,6 +223,29 @@ class Frog extends entity('demo:frog', {
 
 Mob damage to players scales with difficulty, and is 0 on Peaceful.
 
+#### Holding still while winding up
+
+While a timeline winds up an attack, the vanilla AI (wandering, the melee chase) keeps moving and turning the mob, so the wind-up and the attack seem to have two different minds. Hold it still and turn it from the script:
+
+```ts
+pounce = this.timeline(this.pounceSteps, { lane: 'attack', holdStill: true });   // still for the whole timeline
+
+*pounceSteps(t: Steps, target: Player) {
+  const goal = target.location;
+  this.face(goal);            // turn towards it, up to 30° per tick
+  yield* t.wait(10);
+  yield* this.leapTo(t, goal);
+}
+```
+
+| | |
+| --- | --- |
+| `holdStill: true` (timeline option) | Still while the timeline runs; moves again when it ends or is cancelled |
+| `this.holdStill()` → `release()` | The same by hand. Nests; moves again after every hold is released, and the `face` target is cleared then |
+| `this.face(target, turnSpeed = 30)` | Turn towards a position, an entity (followed) or `() => position`, at most `turnSpeed`° per tick. `undefined` stops |
+
+Holding still sets the current value of `minecraft:movement` to 0 (the entity needs a `movement` component) and restores the default afterwards. If the server stops while an entity is held, it is restored when that entity is loaded again.
+
 ### Using `src/pack.ts` instead
 
 If `src/index.ts` cannot run in the simulated environment (it calls something not simulated at the top level), put the list in `src/pack.ts`; it is used instead of `src/index.ts` when it exists. Registration for the hooks is still `register()`.
@@ -518,6 +541,29 @@ class Frog extends entity('demo:frog', {
 | `cancelVanillaHits: true` | このエンティティのバニラの攻撃（`behavior.melee_attack` など）のダメージを `beforeEvents.entityHurt` で取り消す（ノックバック・赤い点滅・音も出ない）。モブが追いかけたり、相手のほうを向いたりするのも近接攻撃の AI なので、AI は残して、ダメージは `dealDamage` で与える |
 
 モブからプレイヤーへのダメージは難易度で増減し、ピースフルでは 0 です。
+
+#### 構えている間は止める
+
+timeline で攻撃を構えている間も、バニラの AI（うろつき・近接攻撃の追いかけ）はモブを動かし、向きを変えます。そのため、構えと攻撃が別々の意思を持っているように見えます。構えている間は止めて、向きはスクリプトで決めます。
+
+```ts
+pounce = this.timeline(this.pounceSteps, { lane: 'attack', holdStill: true });   // 段取りの間ずっと止まる
+
+*pounceSteps(t: Steps, target: Player) {
+  const goal = target.location;
+  this.face(goal);            // そちらへ 1 tick に 30° まで回って向く
+  yield* t.wait(10);
+  yield* this.leapTo(t, goal);
+}
+```
+
+| | |
+| --- | --- |
+| `holdStill: true`（timeline のオプション） | 段取りが動いている間、止まる。終わる・止められると動き出す |
+| `this.holdStill()` → `release()` | 同じことを手で行う。入れ子にでき、全部 release したら動き出す。そのとき `face` の向く先も消える |
+| `this.face(target, turnSpeed = 30)` | 位置・エンティティ（位置を追い続ける）・`() => 位置` のほうへ、1 tick に `turnSpeed`° まで回って向く。`undefined` でやめる |
+
+止まっている間は、`minecraft:movement` の現在の値を 0 にし、終わったら既定の値に戻します（`movement` のコンポーネントが必要です）。止まっている途中でサーバーが止まっても、そのエンティティが次に読み込まれたときに戻します。
 
 ### 代わりに `src/pack.ts` を使う
 
