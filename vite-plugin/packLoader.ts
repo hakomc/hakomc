@@ -1,4 +1,4 @@
-import { createServer } from 'vite';
+import { createServer, type Plugin } from 'vite';
 import { resolve } from 'node:path';
 import { buildPack } from '../core/entity/pack';
 import type { PackFiles } from '../core/entity/entity';
@@ -13,6 +13,16 @@ import mockMinecraftServer from './mockMinecraftServer';
  * @returns 作ったファイルと、watch で監視すべきファイル（pack.ts から辿った全ファイル）
  */
 export async function loadPack(entry: string, root = process.cwd()): Promise<{ files: PackFiles, watchFiles: string[] }> {
+  // 読み込んだファイルを、自前のプラグインで記録する（Vite のモジュールグラフの内部には頼らない）
+  const loaded = new Set<string>();
+  const recordLoaded: Plugin = {
+    name: 'hakomc:record-pack-files',
+    transform(_code, id) {
+      const file = id.split('?')[0];
+      if (file.startsWith(root) && !file.includes('/node_modules/')) loaded.add(file);
+      return null;
+    },
+  };
   const server = await createServer({
     configFile: false,
     root,
@@ -20,7 +30,7 @@ export async function loadPack(entry: string, root = process.cwd()): Promise<{ f
     appType: 'custom',
     server: { middlewareMode: true, hmr: false, watch: null, ws: false },
     optimizeDeps: { noDiscovery: true, include: [] },
-    plugins: [mockMinecraftServer()],
+    plugins: [mockMinecraftServer(), recordLoaded],
   });
   try {
     const file = resolve(root, entry);
@@ -30,8 +40,7 @@ export async function loadPack(entry: string, root = process.cwd()): Promise<{ f
       throw new Error(`${entry} は definePack({ ... }) を default export する`);
     }
     const files = buildPack(pack);
-    const watchFiles = [...server.moduleGraph.idToModuleMap.keys()].filter((id) => id.startsWith(root) && !id.includes('/node_modules/'));
-    return { files, watchFiles };
+    return { files, watchFiles: [...loaded] };
   } finally {
     await server.close();
   }

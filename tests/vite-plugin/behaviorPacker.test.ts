@@ -298,6 +298,16 @@ describe('behaviorPacker: 定義（src/pack.ts）から JSON を作る', () => {
     expect(m.modules.map((x: any) => x.type)).toEqual(['script', 'data']);
     expect(m.dependencies.some((d: any) => d.uuid)).toBe(true);
   });
+  it('assets の .lang に同じキーがあれば、定義から作った行で置き換えて警告する（2 行にしない）', async () => {
+    writePack();
+    write('assets/resource/texts/en_US.lang', '## comment\nentity.hako:boss.name=Old Name\nitem.hako:gem.name=Gem\n');
+    const ctx = await build({ name: 'test', uuid: UUID });
+    expect(read('dist/resource_pack/texts/en_US.lang')).toBe('## comment\nentity.hako:boss.name=Boss\nitem.hako:gem.name=Gem\n');
+    expect(ctx.warn).toHaveBeenCalledWith(expect.stringContaining('texts/en_US.lang の entity.hako:boss.name'));
+    // 何度ビルドしても同じ結果（行が増えない）
+    await build({ name: 'test', uuid: UUID });
+    expect(read('dist/resource_pack/texts/en_US.lang')).toBe('## comment\nentity.hako:boss.name=Boss\nitem.hako:gem.name=Gem\n');
+  });
   it('watch 用に、pack.ts から辿ったファイルも監視する', async () => {
     writePack();
     const ctx = await build({ name: 'test', uuid: UUID });

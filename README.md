@@ -33,6 +33,14 @@ This repository is the core source of the framework side.
     1. `"hakomc": "github:hakomc/hakomc#<branch-name>"`
     1. Running `npm install hakomc` installs the latest state of that branch
 
+### Generated files
+Some files are generated from the installed type / schema packages and committed. After upgrading the package, regenerate and commit them (a test fails while they are stale):
+
+| Package | Command | Output |
+| --- | --- | --- |
+| `@minecraft/server` (and `-ui` / `-net`) | `npm run gen:testing` | `core/testing/generated/` |
+| `@minecraft/bedrock-schemas` | `npm run gen:entity` | `core/entity/generated/components.ts` |
+
 ## 日本語
 
 ### 概要
@@ -60,3 +68,11 @@ ScriptAPIを使用したライブラリやプラグイン作成をサポート�
     1. [hakomc-server](https://github.com/hakomc/hakomc-server)側で package.json の dependencies を書き換え
     1. `"hakomc": "github:hakomc/hakomc#<ブランチ名>"`
     1. `npm install hakomc` を実行するとブランチの最新の状態でインストールされる
+
+### 生成するファイル
+一部のファイルは、インストール済みの型定義・スキーマのパッケージから生成して commit しています。パッケージを上げたら、生成し直して commit してください（古いままだとテストが失敗します）。
+
+| パッケージ | コマンド | 生成先 |
+| --- | --- | --- |
+| `@minecraft/server`（と `-ui` / `-net`） | `npm run gen:testing` | `core/testing/generated/` |
+| `@minecraft/bedrock-schemas` | `npm run gen:entity` | `core/entity/generated/components.ts` |

@@ -342,7 +342,10 @@ globalThis.__SOURCE_MAP__ = ${JSON.stringify(embeddedSourceMap)};
         const clash = Object.keys(packFiles.resource).filter((p) => fs.existsSync(join(DIST_RP, p)));
         if (clash.length) this.warn(`${clash.join(', ')} は ${packEntry} の定義から作ったもので上書きする（assets 側を消してください）`);
         writeJsonFiles(DIST_RP, packFiles.resource);
-        writeLang(DIST_RP, packFiles.lang);
+        const replaced = writeLang(DIST_RP, packFiles.lang);
+        for (const [code, keys] of Object.entries(replaced)) {
+          this.warn(`texts/${code}.lang の ${keys.join(', ')} は ${packEntry} の定義から作ったもので置き換える（assets 側を消してください）`);
+        }
       }
       const rpStub: ManifestStub = {
         'format_version': 2,
