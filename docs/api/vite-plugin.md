@@ -67,6 +67,7 @@ Existing configs keep working: without `assets/`, the output is the same as befo
 | `assetsDir` | `'assets'` | Folder with the files to copy |
 | `resourcePack` | on if some file goes to it | `false` disables it. Or an object: `uuid`, `name` (default `<name> resources`), `description`, `version` (default: the behavior pack's), `manifest` (merged into the generated one) |
 | `mcaddon` | `false` | `true` → `dist/<name>.mcaddon`; a string → that path |
+| `pack` | `'src/pack.ts'` if it exists | File that default-exports `definePack({ ... })` from [`hakomc/entity`](entity.md). Read at build time (with `@minecraft/server` replaced by the simulated one) to generate entity JSON and localisation. `false` disables it |
 
 ## 日本語
 
@@ -131,3 +132,4 @@ export default defineConfig({
 | `assetsDir` | `'assets'` | コピーするファイルを置くフォルダ |
 | `resourcePack` | 入るファイルがあれば有効 | `false` で無効。オブジェクトなら `uuid`・`name`（既定 `<name> resources`）・`description`・`version`（既定はビヘイビアパックと同じ）・`manifest`（生成したものに上書き） |
 | `mcaddon` | `false` | `true` なら `dist/<name>.mcaddon`、文字列ならそのパス |
+| `pack` | `'src/pack.ts'`（あれば） | [`hakomc/entity`](entity.md) の `definePack({ ... })` を default export するファイル。ビルド時に（`@minecraft/server` を模擬に差し替えて）読み込み、エンティティの JSON とローカライズを作る。`false` で使わない |

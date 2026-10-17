@@ -168,3 +168,58 @@ export const copyRouted = (files: RoutedFile[], dest: string) => {
     fs.copyFileSync(src, to);
   }
 };
+
+/** パック内のパス → JSON を書き出す */
+export const writeJsonFiles = (dest: string, files: Record<string, unknown>) => {
+  for (const [rel, json] of Object.entries(files)) {
+    const to = join(dest, rel);
+    fs.mkdirSync(join(to, '..'), { recursive: true });
+    fs.writeFileSync(to, JSON.stringify(json, null, 2));
+  }
+};
+
+/**
+ * ローカライズの行を texts/<言語>.lang に書き、texts/languages.json にその言語を入れる。
+ * assets から置いた .lang があれば、それに足す。同じキーの行があれば、定義から作った行で置き換える
+ * （同じキーが 2 行あると、ゲームがどちらを使うか分からなくなるため）。
+ * @returns 置き換えたキー（言語ごと）
+ */
+export const writeLang = (packDir: string, lang: Record<string, string[]>): Record<string, string[]> => {
+  const replaced: Record<string, string[]> = {};
+  const codes = Object.keys(lang).filter((c) => lang[c].length);
+  if (!codes.length) return replaced;
+  const texts = join(packDir, 'texts');
+  fs.mkdirSync(texts, { recursive: true });
+  const keyOf = (line: string) => {
+    const t = line.trim();
+    if (!t || t.startsWith('#') || !t.includes('=')) return undefined;
+    return t.slice(0, t.indexOf('=')).trim();
+  };
+  for (const code of codes) {
+    const file = join(texts, `${code}.lang`);
+    const lines = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split(/\r?\n/) : [];
+    while (lines.length && lines[lines.length - 1] === '') lines.pop();
+    const index = new Map<string, number>();
+    lines.forEach((l, i) => {
+      const k = keyOf(l);
+      if (k !== undefined) index.set(k, i);
+    });
+    for (const line of lang[code]) {
+      const k = keyOf(line)!;
+      const at = index.get(k);
+      if (at !== undefined) {
+        if (lines[at] !== line) (replaced[code] ??= []).push(k);
+        lines[at] = line;
+      } else {
+        index.set(k, lines.length);
+        lines.push(line);
+      }
+    }
+    fs.writeFileSync(file, `${lines.join('\n')}\n`);
+  }
+  const listFile = join(texts, 'languages.json');
+  const list: string[] = fs.existsSync(listFile) ? JSON.parse(fs.readFileSync(listFile, 'utf8')) : [];
+  for (const code of codes) if (!list.includes(code)) list.push(code);
+  fs.writeFileSync(listFile, JSON.stringify(list, null, 2));
+  return replaced;
+};

@@ -18,6 +18,7 @@ export default defineConfig({
         'form/component/index': resolve(__dirname, 'core/form/components/index.ts'),
         'form/ddui/component/index': resolve(__dirname, 'core/form/ddui/components/index.ts'),
         'vite-plugin/index': resolve(__dirname, 'vite-plugin/index.ts'),
+        'entity/index': resolve(__dirname, 'core/entity/index.ts'),
         'testing/index': resolve(__dirname, 'core/testing/index.ts'),
         'testing/server/index': resolve(__dirname, 'core/testing/server.ts'),
         'testing/server-ui/index': resolve(__dirname, 'core/testing/serverUi.ts'),

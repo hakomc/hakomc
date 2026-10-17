@@ -1,10 +1,12 @@
 import type { Plugin } from 'vite';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const TARGETS: Record<string, string> = {
-  '@minecraft/server': '../testing/server/index.js',
-  '@minecraft/server-ui': '../testing/server-ui/index.js',
-  '@minecraft/server-net': '../testing/server-net/index.js',
+/** [ビルド後の dist/vite-plugin/index.js から見た位置, ソース（vite-plugin/*.ts）から見た位置] */
+const TARGETS: Record<string, [string, string]> = {
+  '@minecraft/server': ['../testing/server/index.js', '../core/testing/server.ts'],
+  '@minecraft/server-ui': ['../testing/server-ui/index.js', '../core/testing/serverUi.ts'],
+  '@minecraft/server-net': ['../testing/server-net/index.js', '../core/testing/serverNet.ts'],
 };
 
 /**
@@ -24,8 +26,12 @@ const mockMinecraftServer = (): Plugin => ({
   resolveId(id) {
     const target = TARGETS[id];
     if (!target) return null;
-    // ビルド後の dist/vite-plugin/index.js から見た位置
-    return fileURLToPath(new URL(target, import.meta.url));
+    // 普段はビルド後の dist から。hakomc 自身のテストではソースから動くので、そちらも探す
+    for (const t of target) {
+      const file = fileURLToPath(new URL(t, import.meta.url));
+      if (existsSync(file)) return file;
+    }
+    return null;
   },
 });
 
