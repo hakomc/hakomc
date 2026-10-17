@@ -157,6 +157,37 @@ Golem.register();
 - `this.part(Back)`: `entity`, `health`, `maxHealth`, `broken`, `break()`, `restore()`. Hooks: `onPartHurt(part, damage, ev)`, `onPartBreak(part)`, `onPartRestore(part)`.
 - In tests, `sim.loadEntityClass(Golem)` loads the body and the parts.
 
+### Grabbing a player
+
+`this.grab(player, options)` holds a player in front of the entity (teleported every tick, following its rotation), and can set the camera and lock inputs. Use it inside a timeline and release in `finally`, so a cancelled timeline always lets go.
+
+```ts
+*biteSteps(t: Steps, target: Player) {
+  const hold = this.grab(target, { offset: [0, 0.8, 0.9], camera: CameraPreset.ThirdPerson });
+  try {
+    for (let i = 0; i < 3 && hold.active; i++) {
+      yield* t.wait(20);
+      target.applyDamage(3, { cause: EntityDamageCause.entityAttack, damagingEntity: this.entity });
+    }
+  } finally {
+    hold.release();
+  }
+}
+```
+
+| Option | |
+| --- | --- |
+| `offset` | `[x, y, z]` from the holder, rotated with it (default `[0, 0, 1.5]`, in front) |
+| `camera` | Camera preset while held: `CameraPreset.ThirdPerson` etc. (the vanilla presets, same values as `MinecraftCameraPresetsTypes` in `@minecraft/vanilla-data`), or the id of your own preset; `{ preset, options }` for options. Left alone if omitted |
+| `lock` | Inputs to disable: `'movement'`, `'lateral'`, `'jump'`, `'sneak'`, `'camera'` (default movement and jump) |
+| `face` | Turn the player to the holder's head (default true) |
+| `max` | Let go after this many ticks |
+| `onRelease(reason)` | Called once when released |
+
+The hold is released automatically — camera and inputs restored — when the holder dies (`'holderDied'`) or disappears (`'holderGone'`), the player dies (`'targetDied'`) or leaves (`'targetLeft'`), `max` passes (`'timeout'`), or another grab takes the same player (`'replaced'`). `hold`: `active`, `reason`, `elapsed`, `release()`; `holdOf(player)` returns the current hold.
+
+The player carries a mark (dynamic property) while held. When something could not be restored — the player left, the server stopped, `/reload` — it is restored the next time the player spawns.
+
 ### Using `src/pack.ts` instead
 
 If `src/index.ts` cannot run in the simulated environment (it calls something not simulated at the top level), put the list in `src/pack.ts`; it is used instead of `src/index.ts` when it exists. Registration for the hooks is still `register()`.
@@ -380,6 +411,43 @@ Golem.register();
   - `this.part(Back)` で `entity`・`health`・`maxHealth`・`broken`・`break()`・`restore()` が使えます。
   - フックは `onPartHurt(part, damage, ev)`・`onPartBreak(part)`・`onPartRestore(part)` です。
 - **テスト:** `sim.loadEntityClass(Golem)` で、本体と部位の JSON をまとめて読み込めます。
+
+### プレイヤーを掴む
+
+`this.grab(player, options)` で、プレイヤーをエンティティの前などに固定します（毎 tick テレポートし、向きにも追従します）。カメラの切り替えや、操作の制限もできます。timeline の中で使い、`finally` で放してください。そうすれば、段取りが止められても必ず放せます。
+
+```ts
+*biteSteps(t: Steps, target: Player) {
+  const hold = this.grab(target, { offset: [0, 0.8, 0.9], camera: CameraPreset.ThirdPerson });
+  try {
+    for (let i = 0; i < 3 && hold.active; i++) {
+      yield* t.wait(20);
+      target.applyDamage(3, { cause: EntityDamageCause.entityAttack, damagingEntity: this.entity });
+    }
+  } finally {
+    hold.release();
+  }
+}
+```
+
+| オプション | |
+| --- | --- |
+| `offset` | 掴んでいる側から見た `[x, y, z]`。向きに合わせて回る（既定 `[0, 0, 1.5]` = 正面） |
+| `camera` | 掴んでいる間のカメラ。`CameraPreset.ThirdPerson` など（バニラのプリセット。`@minecraft/vanilla-data` の `MinecraftCameraPresetsTypes` と同じ値）か、自作のプリセットの識別子。オプション付きは `{ preset, options }`。省略すると変えない |
+| `lock` | 止める操作: `'movement'`・`'lateral'`・`'jump'`・`'sneak'`・`'camera'`（既定は移動とジャンプ） |
+| `face` | プレイヤーを掴んでいる側の頭に向かせる（既定 true） |
+| `max` | この tick 数を過ぎたら放す |
+| `onRelease(reason)` | 放したときに 1 回呼ばれる |
+
+**自動で放す場面:** 次のときは自動で放し、カメラと操作も元に戻します。
+- 掴んでいる側が死んだ（`'holderDied'`）・消えた（`'holderGone'`）
+- プレイヤーが死んだ（`'targetDied'`）・抜けた（`'targetLeft'`）
+- `max` を過ぎた（`'timeout'`）
+- 同じプレイヤーを別の掴みで掴んだ（`'replaced'`）
+
+**`hold` で使えるもの:** `active`・`reason`・`elapsed`・`release()` です。`holdOf(player)` で、今の掴みを得られます。
+
+**戻し損ねたとき:** 掴んでいる間、プレイヤーには印（ダイナミックプロパティ）を付けています。抜けた・サーバーが止まった・`/reload` などで戻せなかったときは、そのプレイヤーが次に出現したときに戻します。
 
 ### 代わりに `src/pack.ts` を使う
 

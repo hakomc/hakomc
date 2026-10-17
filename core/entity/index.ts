@@ -8,3 +8,4 @@ export { type LastKnown, type LoadReason } from './runtime';
 export { Timeline, type CancelReason, type Steps, type TimelineOptions } from './timeline';
 export { Part, PartBase, type PartClass, type PartOptions } from './part';
 export { type PartHandle } from './parts-runtime';
+export { CameraPreset, holdOf, type CameraPresetId, type GrabOptions, type Hold, type LockKind, type ReleaseReason } from './grab';
