@@ -7,6 +7,7 @@
  */
 import { system, world, type Entity } from '@minecraft/server';
 import { registry, type Entry, type HookTarget, type LastKnown, type LoadReason, type RegisteredClass } from './registry';
+import { installGrab } from './grab';
 import { handlePartGone, handlePartHurt, removeParts, sweepOrphanParts, syncParts } from './parts-runtime';
 
 export { registry, resetRegistry, type LastKnown, type LoadReason, type RegisteredClass } from './registry';
@@ -207,6 +208,9 @@ function install() {
     const entry = registry().get(ev.typeId);
     if (entry) forget(entry, ev.removedEntityId);
   });
+
+  // 掴み: 戻し損ねたプレイヤーを、出現したときに戻せるように
+  installGrab();
 
   world.afterEvents.worldLoad.subscribe(() => scan());
   // /reload のときなど worldLoad が来ない場合に備えて、最初の tick でも探す（二重には作らない）

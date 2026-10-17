@@ -1,4 +1,4 @@
-import type { Entity, EntityDieAfterEvent, EntityHitEntityAfterEvent, EntityHurtAfterEvent, EntitySpawnAfterEvent, PlayerInteractWithEntityAfterEvent } from '@minecraft/server';
+import type { Entity, Player, EntityDieAfterEvent, EntityHitEntityAfterEvent, EntityHurtAfterEvent, EntitySpawnAfterEvent, PlayerInteractWithEntityAfterEvent } from '@minecraft/server';
 import { system } from '@minecraft/server';
 import { instanceOf, instancesOf, register, registry, type LastKnown, type LoadReason, type RegisteredClass } from './runtime';
 import { Timeline, type Clock, type Steps, type TimelineOptions, type WaitRequest } from './timeline';
@@ -7,6 +7,7 @@ import { EntityEvent, type GroupClass } from './event';
 import type { PropertyClass, ValueOf } from './property';
 import { bodyRideable, partEntityJson, partResourceFiles, type PartClass } from './part';
 import { partHandle, type PartHandle } from './parts-runtime';
+import { grab, type GrabOptions, type Hold } from './grab';
 
 /** 言語ごとの文字列（en_US / ja_JP など） */
 export type Localized = Partial<Record<'en_US' | 'ja_JP' | (string & {}), string>>;
@@ -359,7 +360,15 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
     }
 
     /** プロパティを読む */
-    /** 部位の状態（体力・壊れているか）と操作 */
+    /**
+     * プレイヤーを掴む（自分の前などに固定し、カメラと操作を制限する）。
+     * 放すのは hold.release()。死亡・削除・退出・max のときは自動で放す
+     */
+    grab(player: Player, options?: GrabOptions): Hold {
+      return grab(this.entity, player, options);
+    }
+
+        /** 部位の状態（体力・壊れているか）と操作 */
     part(part: PT): PartHandle {
       return partHandle(this as never, part);
     }
