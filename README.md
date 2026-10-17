@@ -20,6 +20,7 @@ This repository is the core source of the framework side.
 - [Core (`hakomc`): Timer / Net / Debug](docs/api/core.md)
 - [Form (`hakomc/form/component`)](docs/api/form.md)
 - [DDUI (`hakomc/form/ddui/component`)](docs/api/ddui.md)
+- [Testing (`hakomc/testing`)](docs/api/testing.md)
 
 ### Development workflow
 1. Create a new working branch such as feature/*
@@ -45,6 +46,7 @@ ScriptAPIを使用したライブラリやプラグイン作成をサポート�
 - [Core (`hakomc`): Timer / Net / Debug](docs/api/core.md)
 - [Form (`hakomc/form/component`)](docs/api/form.md)
 - [DDUI (`hakomc/form/ddui/component`)](docs/api/ddui.md)
+- [Testing (`hakomc/testing`)](docs/api/testing.md)
 
 ### 開発手順
 1. feature/* 等で新しく作業ブランチを切る

@@ -12,7 +12,8 @@
     "prepare": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "gen:testing": "node scripts/gen-testing-stubs.mjs"
   },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -33,6 +34,9 @@
       ],
       "vite-plugin": [
         "./dist/vite-plugin/index.d.ts"
+      ],
+      "testing": [
+        "./dist/core/testing/index.d.ts"
       ]
     }
   },
@@ -66,6 +70,26 @@
       "types": "./dist/vite-plugin/index.d.ts",
       "import": "./dist/vite-plugin/index.js",
       "default": "./dist/vite-plugin/index.js"
+    },
+    "./testing": {
+      "types": "./dist/core/testing/index.d.ts",
+      "import": "./dist/testing/index.js",
+      "default": "./dist/testing/index.js"
+    },
+    "./testing/server": {
+      "types": "./dist/core/testing/server.d.ts",
+      "import": "./dist/testing/server/index.js",
+      "default": "./dist/testing/server/index.js"
+    },
+    "./testing/server-ui": {
+      "types": "./dist/core/testing/serverUi.d.ts",
+      "import": "./dist/testing/server-ui/index.js",
+      "default": "./dist/testing/server-ui/index.js"
+    },
+    "./testing/server-net": {
+      "types": "./dist/core/testing/serverNet.d.ts",
+      "import": "./dist/testing/server-net/index.js",
+      "default": "./dist/testing/server-net/index.js"
     }
   },
   "devDependencies": {
