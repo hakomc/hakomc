@@ -1,4 +1,4 @@
-import type { Entity, Player, EntityDieAfterEvent, EntityHitEntityAfterEvent, EntityHurtAfterEvent, EntitySpawnAfterEvent, PlayerInteractWithEntityAfterEvent } from '@minecraft/server';
+import type { Entity, Player, Vector3, EntityDieAfterEvent, EntityHitEntityAfterEvent, EntityHurtAfterEvent, EntitySpawnAfterEvent, PlayerInteractWithEntityAfterEvent } from '@minecraft/server';
 import { system } from '@minecraft/server';
 import { instanceOf, instancesOf, register, registry, type LastKnown, type LoadReason, type RegisteredClass } from './runtime';
 import { Timeline, type Clock, type Steps, type TimelineOptions, type WaitRequest } from './timeline';
@@ -8,6 +8,8 @@ import type { PropertyClass, ValueOf } from './property';
 import { bodyRideable, hiddenBones, partBrokenProperty, partEntityJson, partOverlapWarnings, partResourceFiles, type PartClass } from './part';
 import { partHandle, type PartHandle } from './parts-runtime';
 import { grab, type GrabOptions, type Hold } from './grab';
+import { hit, leap, type HitOptions, type LeapOptions, type LeapResult } from './motion';
+import { holdStill, toFacingTarget, type FaceTarget, type Still } from './still';
 
 /** 言語ごとの文字列（en_US / ja_JP など） */
 export type Localized = Partial<Record<'en_US' | 'ja_JP' | (string & {}), string>>;
@@ -53,6 +55,13 @@ export interface EntityDefinition<P extends PropertyClass, E extends EventRef, P
   summonable?: boolean;
   /** リソースパック側（見た目）。無ければ client_entity は作らない */
   client?: ClientDefinition;
+  /**
+   * このエンティティのバニラの近接攻撃（minecraft:behavior.melee_attack など、原因が entityAttack のもの）のダメージを取り消す。
+   * 飛び道具や爆発など、ほかの原因のダメージは取り消さない。
+   * 追いかける・向く、といった AI はそのまま使い、ダメージは this.dealDamage() で与えるとき用。
+   * 取り消すので、ノックバック・赤い点滅・音も出ない
+   */
+  cancelVanillaHits?: boolean;
   /** 既定 '1.21.0' */
   formatVersion?: string;
   /** そのまま description に足す内容（runtime_identifier など） */
@@ -101,6 +110,18 @@ export interface EntityClass {
  * Morgrave.of(entity).roar();
  * ```
  */
+/** timeline の holdStill: 段取りを、止まる → 段取り → 動き出す、で包む */
+function stillWrapped<A extends unknown[]>(body: (this: { holdStill(): Still }, t: Steps, ...args: A) => Generator<WaitRequest, unknown, unknown>) {
+  return function* (this: { holdStill(): Still }, t: Steps, ...args: A) {
+    const still = this.holdStill();
+    try {
+      return yield* body.call(this, t, ...args);
+    } finally {
+      still.release();
+    }
+  };
+}
+
 export function entity<const P extends PropertyClass = never, const E extends EventRef = never, const PT extends PartClass = never>(id: string, def: EntityDefinition<P, E, PT> = {}) {
   if (!/^[a-z0-9_.-]+:[a-z0-9_.-]+$/.test(id)) throw new EntityDefinitionError(`エンティティの識別子 "${id}" は「名前空間:名前」の形で、小文字・数字・_ . - だけにする`);
   const ns = id.split(':')[0];
@@ -351,6 +372,8 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
     readonly entity: Entity;
     /** this.timeline(...) で作った段取り */
     readonly timelines: Timeline<any>[] = [];
+    /** @internal this.face(...) の向く先 */
+    facing?: { target: () => Vector3 | undefined, turnSpeed: number };
     /** @internal timeline の時計 */
     readonly clock: Clock = { now: () => system.currentTick };
     constructor(e: Entity) {
@@ -379,9 +402,25 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
         ensureDriven: () => {
           if (!registry().has(id)) throw new Error(`[hakomc/entity] ${this.constructor.name}（${id}）が register() されていないので、timeline を start できない。毎 tick 進めるのはフレームワークなので、定義のファイルで ${this.constructor.name}.register() を呼ぶ`);
         },
-      }, body as never, options, this);
+      }, (options?.holdStill ? stillWrapped(body as never) : body) as never, options, this);
       this.timelines.push(t);
       return t;
+    }
+
+    /**
+     * その場で止まる（AI に動かされない）。release() で動き出す。入れ子にしてよい。
+     * 全部 release したら、this.face の向く先も消す
+     */
+    holdStill(): Still {
+      return holdStill(this, this.entity, () => { this.facing = undefined; });
+    }
+
+    /**
+     * 向く先を決める。毎 tick、turnSpeed 度（既定 30）まで回って向く。undefined で向くのをやめる。
+     * エンティティを渡すと、その位置を追って向き続ける
+     */
+    face(target: FaceTarget | undefined, turnSpeed = 30): void {
+      this.facing = target === undefined ? undefined : { target: toFacingTarget(target), turnSpeed };
     }
 
     /** 動いている段取りを全て止める（理由 'cancel'） */
@@ -403,7 +442,20 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
       return grab(this.entity, player, options);
     }
 
-        /** 部位の状態（体力・壊れているか）と操作 */
+        /**
+     * 決めた地点へ跳ぶ。timeline の中で `const r = yield* this.leapTo(t, goal)` と使う。
+     * 着地するまで待ち、着地したか・何 tick かかったかを返す
+     */
+    leapTo(t: Steps, goal: Vector3, options?: LeapOptions): Generator<WaitRequest, LeapResult, unknown> {
+      return leap(this.entity, t, goal, options);
+    }
+
+    /** ダメージを与える（cancelVanillaHits でも取り消されない）。ノックバックも付けられる */
+    dealDamage(target: Entity, amount: number, options?: HitOptions): boolean {
+      return hit(this.entity, target, amount, options);
+    }
+
+    /** 部位の状態（体力・壊れているか）と操作 */
     part(part: PT): PartHandle {
       return partHandle(this as never, part);
     }

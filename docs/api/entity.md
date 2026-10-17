@@ -190,6 +190,62 @@ The hold is released automatically — camera and inputs restored — when the h
 
 The player carries a mark (dynamic property) while held. When something could not be restored — the player left, the server stopped, `/reload` — it is restored the next time the player spawns.
 
+### Leaping and dealing damage
+
+```ts
+class Frog extends entity('demo:frog', {
+  components: [physics(), behaviorNearestAttackableTarget({ … }), behaviorMeleeAttack({ priority: 3 })],
+  cancelVanillaHits: true,     // keep the melee AI for chasing and facing, cancel its damage
+}) {
+  pounce = this.timeline(this.pounceSteps, { lane: 'attack' });
+
+  *pounceSteps(t: Steps, target: Player) {
+    const goal = target.location;              // where the player stood when the jump was decided
+    yield* t.wait(10);
+    const r = yield* this.leapTo(t, goal, { short: 0.5 });
+    if (r.landed) {
+      for (const p of this.entity.dimension.getPlayers({ location: r.location, maxDistance: 2 })) {
+        this.dealDamage(p, 5, { knockback: { horizontal: 1.2, vertical: 0.4 } });
+      }
+    }
+  }
+}
+```
+
+| | |
+| --- | --- |
+| `yield* this.leapTo(t, goal, options)` | Jump to `goal` on a parabola (also up onto or down from a different height) and wait for the landing. Returns `{ landed, ticks, location }`. The take-off speed is solved from gravity 0.08 and drag 0.98 (vertical) / 0.91 (horizontal); in the air the horizontal speed is corrected every tick, which also absorbs the difference from the game's real drag |
+| `short` / `maxDistance` / `upward` | Land this far before the goal / jump at most this far (default 16) / initial vertical speed (default grows with distance) |
+| `follow: () => p.location` | Re-aim at a moving target every tick. Without it the jump goes to the spot passed in, so stepping aside dodges it |
+| `steer: false` / `maxTicks` | Pure ballistic jump / give up waiting for the landing (default 100) |
+| `this.dealDamage(target, amount, { cause, knockback })` | Damage from a script. Not cancelled by `cancelVanillaHits`. `knockback`: a number (horizontal, vertical 0.3) or `{ horizontal, vertical }`, away from this entity |
+| `cancelVanillaHits: true` | Cancel the damage of this entity's vanilla melee attacks (`behavior.melee_attack` …, cause `entityAttack`) in `beforeEvents.entityHurt` — so no knockback, red flash or sound either. Projectiles and other causes are not cancelled. The melee AI is still what makes a mob chase and face its target, so keep it and deal damage with `dealDamage` |
+
+Mob damage to players scales with difficulty, and is 0 on Peaceful.
+
+#### Holding still while winding up
+
+While a timeline winds up an attack, the vanilla AI (wandering, the melee chase) keeps moving and turning the mob, so the wind-up and the attack seem to have two different minds. Hold it still and turn it from the script:
+
+```ts
+pounce = this.timeline(this.pounceSteps, { lane: 'attack', holdStill: true });   // still for the whole timeline
+
+*pounceSteps(t: Steps, target: Player) {
+  const goal = target.location;
+  this.face(goal);            // turn towards it, up to 30° per tick
+  yield* t.wait(10);
+  yield* this.leapTo(t, goal);
+}
+```
+
+| | |
+| --- | --- |
+| `holdStill: true` (timeline option) | Still while the timeline runs; moves again when it ends or is cancelled |
+| `this.holdStill()` → `release()` | The same by hand. Nests; moves again after every hold is released, and the `face` target is cleared then |
+| `this.face(target, turnSpeed = 30)` | Turn towards a position, an entity (followed) or `() => position`, at most `turnSpeed`° per tick. `undefined` stops |
+
+Holding still sets the current value of `minecraft:movement` to 0 (the entity needs a `movement` component) and restores the default afterwards. If the server stops while an entity is held, it is restored when that entity is loaded again.
+
 ### Using `src/pack.ts` instead
 
 If `src/index.ts` cannot run in the simulated environment (it calls something not simulated at the top level), put the list in `src/pack.ts`; it is used instead of `src/index.ts` when it exists. Registration for the hooks is still `register()`.
@@ -452,6 +508,62 @@ Golem.register();
 **`hold` で使えるもの:** `active`・`reason`・`elapsed`・`release()` です。`holdOf(player)` で、今の掴みを得られます。
 
 **戻し損ねたとき:** 掴んでいる間、プレイヤーには印（ダイナミックプロパティ）を付けています。抜けた・サーバーが止まった・`/reload` などで戻せなかったときは、そのプレイヤーが次に出現したときに戻します。
+
+### 跳躍とダメージ
+
+```ts
+class Frog extends entity('demo:frog', {
+  components: [physics(), behaviorNearestAttackableTarget({ … }), behaviorMeleeAttack({ priority: 3 })],
+  cancelVanillaHits: true,     // 追いかける・向く AI として近接攻撃を残し、そのダメージは取り消す
+}) {
+  pounce = this.timeline(this.pounceSteps, { lane: 'attack' });
+
+  *pounceSteps(t: Steps, target: Player) {
+    const goal = target.location;              // 跳ぶと決めた瞬間のプレイヤーの位置
+    yield* t.wait(10);
+    const r = yield* this.leapTo(t, goal, { short: 0.5 });
+    if (r.landed) {
+      for (const p of this.entity.dimension.getPlayers({ location: r.location, maxDistance: 2 })) {
+        this.dealDamage(p, 5, { knockback: { horizontal: 1.2, vertical: 0.4 } });
+      }
+    }
+  }
+}
+```
+
+| | |
+| --- | --- |
+| `yield* this.leapTo(t, goal, options)` | `goal` へ放物線で跳び（高い所・低い所へも）、着地まで待つ。`{ landed, ticks, location }` を返す。最初の速さは、重力 0.08・縦の空気抵抗 0.98・横の空気抵抗 0.91 から計算する。空中では横の速さを毎 tick 直すので、実機の空気抵抗との差も吸収する |
+| `short` / `maxDistance` / `upward` | 目標のこの距離だけ手前に降りる / 跳ぶ距離の上限（既定 16） / 最初の縦の速さ（既定は距離が遠いほど高い） |
+| `follow: () => p.location` | 動く目標を毎 tick 狙い直す。無ければ渡した地点へ跳ぶので、横に避ければ外れる |
+| `steer: false` / `maxTicks` | 空中で直さない、ただの放物線 / 着地を待つ上限（既定 100） |
+| `this.dealDamage(target, amount, { cause, knockback })` | スクリプトからダメージを与える。`cancelVanillaHits` でも取り消されない。`knockback` は数値（横の強さ、縦は 0.3）か `{ horizontal, vertical }`。このエンティティから外向き |
+| `cancelVanillaHits: true` | このエンティティのバニラの近接攻撃（`behavior.melee_attack` など、原因が `entityAttack` のもの）のダメージを `beforeEvents.entityHurt` で取り消す（ノックバック・赤い点滅・音も出ない）。飛び道具などほかの原因は取り消さない。モブが追いかけたり、相手のほうを向いたりするのも近接攻撃の AI なので、AI は残して、ダメージは `dealDamage` で与える |
+
+モブからプレイヤーへのダメージは難易度で増減し、ピースフルでは 0 です。
+
+#### 構えている間は止める
+
+timeline で攻撃を構えている間も、バニラの AI（うろつき・近接攻撃の追いかけ）はモブを動かし、向きを変えます。そのため、構えと攻撃が別々の意思を持っているように見えます。構えている間は止めて、向きはスクリプトで決めます。
+
+```ts
+pounce = this.timeline(this.pounceSteps, { lane: 'attack', holdStill: true });   // 段取りの間ずっと止まる
+
+*pounceSteps(t: Steps, target: Player) {
+  const goal = target.location;
+  this.face(goal);            // そちらへ 1 tick に 30° まで回って向く
+  yield* t.wait(10);
+  yield* this.leapTo(t, goal);
+}
+```
+
+| | |
+| --- | --- |
+| `holdStill: true`（timeline のオプション） | 段取りが動いている間、止まる。終わる・止められると動き出す |
+| `this.holdStill()` → `release()` | 同じことを手で行う。入れ子にでき、全部 release したら動き出す。そのとき `face` の向く先も消える |
+| `this.face(target, turnSpeed = 30)` | 位置・エンティティ（位置を追い続ける）・`() => 位置` のほうへ、1 tick に `turnSpeed`° まで回って向く。`undefined` でやめる |
+
+止まっている間は、`minecraft:movement` の現在の値を 0 にし、終わったら既定の値に戻します（`movement` のコンポーネントが必要です）。止まっている途中でサーバーが止まっても、そのエンティティが次に読み込まれたときに戻します。
 
 ### 代わりに `src/pack.ts` を使う
 

@@ -51,6 +51,11 @@ export type WaitRequest = { ticks: number } | { until: () => boolean, deadline?:
 export interface TimelineOptions {
   /** 同じ lane の timeline は同時に 1 つだけ動く */
   lane?: string;
+  /**
+   * 動いている間、エンティティをその場で止める（AI に動かされない。向きは this.face で決める）。
+   * 構えと攻撃の向きが AI とずれないように。終わる・止められると、自動で動き出す
+   */
+  holdStill?: boolean;
   /** 止まったときに呼ぶ（理由付き）。後片付けは finally でもよい */
   onCancel?: (reason: CancelReason) => void;
 }

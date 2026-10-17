@@ -8,6 +8,8 @@
 import { system, world, type Entity } from '@minecraft/server';
 import { registry, type Entry, type HookTarget, type LastKnown, type LoadReason, type RegisteredClass } from './registry';
 import { installGrab } from './grab';
+import { isScriptedHit } from './motion';
+import { releaseLeftoverStill } from './still';
 import { handlePartGone, handlePartHurt, removeParts, sweepOrphanParts, syncParts } from './parts-runtime';
 
 export { registry, resetRegistry, type LastKnown, type LoadReason, type RegisteredClass } from './registry';
@@ -60,6 +62,8 @@ function ensure(entry: Entry, e: Entity, how: LoadReason | { spawn: unknown }): 
   if (existing && (existing.entity === e || isValid(existing.entity))) return existing;
   const obj = new entry.cls(e);
   entry.instances.set(e.id, obj);
+  // 止まっている途中でサーバーが止まった・読み込まれなくなった個体は、移動の速さが 0 のまま保存されているので戻す
+  releaseLeftoverStill(e);
   // 部位は、フックより先に座席に乗せておく（onSpawn などで this.part(…).entity を使えるように）
   try {
     syncParts(entry, obj);
@@ -116,6 +120,19 @@ function scan() {
  * 1 つの後片付け（finally / onCancel）が例外を投げても、ログに出して残りを止め続ける
  * （死亡・削除の処理の途中なので、ここで投げ直すと残りの段取りが止まらないまま残ってしまうため）
  */
+/** 向く先へ、1 tick に turnSpeed 度まで回る */
+function turnTowards(obj: HookTarget) {
+  const f = obj.facing!;
+  const to = f.target();
+  if (!to) return;
+  const e = obj.entity;
+  const p = e.location;
+  const want = (Math.atan2(-(to.x - p.x), to.z - p.z) * 180) / Math.PI;
+  const cur = e.getRotation().y;
+  const diff = ((((want - cur) % 360) + 540) % 360) - 180;
+  e.setRotation({ x: 0, y: cur + Math.max(-f.turnSpeed, Math.min(f.turnSpeed, diff)) });
+}
+
 function cancelTimelines(obj: HookTarget, reason: 'died' | 'removed') {
   for (const t of obj.timelines ?? []) {
     try {
@@ -151,6 +168,23 @@ function install() {
     const entry = entryOf(ev.entity);
     if (entry) ensure(entry, ev.entity, 'chunk');
   });
+  // cancelVanillaHits: バニラの近接攻撃を取り消す（this.dealDamage() のダメージは通す）。
+  // 原因が entityAttack のものだけ。そのエンティティが撃った飛び道具（projectile）などは取り消さない
+  world.beforeEvents.entityHurt.subscribe((ev) => {
+    if (isScriptedHit()) return;
+    if (ev.damageSource.cause !== 'entityAttack') return;
+    const src = ev.damageSource.damagingEntity;
+    if (!src) return;
+    let typeId: string;
+    try {
+      typeId = src.typeId;
+    } catch {
+      return;
+    }
+    const entry = registry().get(typeId);
+    if ((entry?.cls.definition as { cancelVanillaHits?: boolean } | undefined)?.cancelVanillaHits) ev.cancel = true;
+  });
+
   after.entityHurt.subscribe((ev) => {
     // 部位へのダメージは本体に伝える
     if (handlePartHurt(ev, (en, body) => ensure(en, body, 'late'))) return;
@@ -225,7 +259,7 @@ function install() {
       for (const [id, obj] of entry.instances) {
         // 毎 tick・全個体で通る所なので、配列を作らずに確かめる
         const hasRunning = obj.timelines?.some((t) => t.running) ?? false;
-        if (!entry.hasTick && !entry.hasDie && !hasRunning) continue;
+        if (!entry.hasTick && !entry.hasDie && !hasRunning && !obj.facing) continue;
         if (!isValid(obj.entity)) {
           forget(entry, id);
           continue;
@@ -237,6 +271,14 @@ function install() {
         } catch (e) {
           console.error(`[hakomc/entity] ${entry.cls.name}.onTick (entity ${id}):`, e);
           errors.push(e);
+        }
+        // this.face(...) の向く先へ、少しずつ向く
+        if (obj.facing) {
+          try {
+            turnTowards(obj);
+          } catch (e) {
+            errors.push(e);
+          }
         }
         // onTick の中で始めた段取りは、始めた時点で最初の yield まで進んでいる。
         // 同じ tick にもう一度進めないことは Timeline.advance が確かめる

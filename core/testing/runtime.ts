@@ -85,6 +85,8 @@ export interface EntityTypeDef {
   seats?: Vector3[];
   /** 重力・空気抵抗・接地を計算するか */
   physics?: boolean;
+  /** minecraft:movement の値（移動の速さ。getComponent('minecraft:movement') で読み書きできる） */
+  movement?: number;
   /** 当たり判定の大きさ（接地判定に使う） */
   collision?: { width: number, height: number };
   /** triggerEvent で set_property するイベント（entity JSON の events.*.set_property 相当） */
