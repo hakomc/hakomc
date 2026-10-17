@@ -18,7 +18,9 @@ const { instance, DataDrivenScreenClosedReason } = vi.hoisted(() => {
 });
 
 vi.mock('@minecraft/server-ui', () => ({
-  MessageBox: vi.fn(() => instance),
+  MessageBox: vi.fn(function () {
+    return instance;
+  }),
   DataDrivenScreenClosedReason,
 }));
 
