@@ -442,6 +442,21 @@ describe('behaviorPacker: リソースパックの参照の検査', () => {
     warnings = ctx.warn.mock.calls.map((c: any[]) => c[0]);
     expect(warnings).toEqual([]);
   });
+  it('render_controllers は配列・文字列 1 つ・オブジェクトのどれでも読む。同じ警告は 1 回だけ', async () => {
+    write('assets/resource/entity/s.entity.json', clientEntity('x:s', { render_controllers: 'controller.render.default' }));
+    write('assets/resource/entity/o.entity.json', clientEntity('x:o', { render_controllers: { 'controller.render.gone': 'q.is_baby' } }));
+    write('assets/resource/entity/d.entity.json', clientEntity('x:d', {
+      render_controllers: ['controller.render.gone', { 'controller.render.gone': 'q.is_baby' }],
+      geometry: { a: 'geometry.gone', b: 'geometry.gone' },
+    }));
+    const ctx = await build({ name: 'test', uuid: UUID });
+    const warnings = ctx.warn.mock.calls.map((c: any[]) => c[0]).sort();
+    expect(warnings).toEqual([
+      expect.stringMatching(/^entity\/d\.entity\.json（x:d）: geometry geometry\.gone が見つからない/),
+      expect.stringMatching(/^entity\/d\.entity\.json（x:d）: レンダーコントローラー controller\.render\.gone が見つからない/),
+      expect.stringMatching(/^entity\/o\.entity\.json（x:o）: レンダーコントローラー controller\.render\.gone が見つからない/),
+    ]);
+  });
   it('checkRefs: false で確かめない', async () => {
     write('assets/resource/entity/a.entity.json', clientEntity('x:a', { geometry: { default: 'geometry.missing' } }));
     const ctx = await build({ name: 'test', uuid: UUID, checkRefs: false });

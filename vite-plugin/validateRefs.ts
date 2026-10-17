@@ -73,6 +73,16 @@ function collect(rp: string) {
   return { geometries, animations, renderControllers, textures };
 }
 
+/**
+ * render_controllers の識別子を取り出す。正式には配列だが、文字列 1 つやオブジェクトで書かれていても扱う
+ * （文字列をそのまま for...of で回すと、1 文字ずつになってしまうため）
+ * - 配列の要素は、文字列（"controller.render.x"）か、条件付き（{ "controller.render.x": "q.is_baby" }）
+ */
+export function renderControllerIds(v: unknown): string[] {
+  const items = Array.isArray(v) ? v : v === undefined || v === null ? [] : [v];
+  return items.flatMap((rc) => (typeof rc === 'string' ? [rc] : rc && typeof rc === 'object' ? Object.keys(rc) : []));
+}
+
 /** 値（文字列 or { name: 値 }）を全部取り出す */
 const values = (v: unknown): string[] => (typeof v === 'string' ? [v] : v && typeof v === 'object' ? Object.values(v as Record<string, unknown>).filter((x): x is string => typeof x === 'string') : []);
 
@@ -95,13 +105,18 @@ export function checkResourceRefs(rp: string): string[] {
     const desc = d?.['minecraft:client_entity']?.description;
     if (!desc) continue;
     const where = `${relative(rp, f).split(sep).join('/')}（${desc.identifier}）`;
-    const miss = (kind: string, name: string, hint: string) => warnings.push(`${where}: ${kind} ${name} が見つからない（${hint}。バニラのものなら無視してよい）`);
+    // 同じエンティティの中で、同じものを何度も参照していても 1 回だけ警告する
+    const reported = new Set<string>();
+    const miss = (kind: string, name: string, hint: string) => {
+      if (reported.has(`${kind}:${name}`)) return;
+      reported.add(`${kind}:${name}`);
+      warnings.push(`${where}: ${kind} ${name} が見つからない（${hint}。バニラのものなら無視してよい）`);
+    };
     for (const g of values(desc.geometry)) if (!have.geometries.has(g)) miss('geometry', g, 'assets/models/ にその識別子のモデルを置く');
     for (const t of values(desc.textures)) if (!have.textures.has(t)) miss('テクスチャ', t, `assets/${t}.png を置く`);
     for (const a of values(desc.animations)) if (!have.animations.has(a)) miss('アニメーション', a, 'assets/resource/animations/ か animation_controllers/ に置く');
-    for (const rc of desc.render_controllers ?? []) {
-      const id = typeof rc === 'string' ? rc : Object.keys(rc ?? {})[0];
-      if (id && !have.renderControllers.has(id)) miss('レンダーコントローラー', id, 'assets/resource/render_controllers/ に置く');
+    for (const id of renderControllerIds(desc.render_controllers)) {
+      if (!have.renderControllers.has(id)) miss('レンダーコントローラー', id, 'assets/resource/render_controllers/ に置く');
     }
   }
   return warnings;
