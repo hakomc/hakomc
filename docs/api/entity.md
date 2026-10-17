@@ -246,6 +246,29 @@ pounce = this.timeline(this.pounceSteps, { lane: 'attack', holdStill: true });  
 
 Holding still sets the current value of `minecraft:movement` to 0 (the entity needs a `movement` component) and restores the default afterwards. If the server stops while an entity is held, it is restored when that entity is loaded again.
 
+### Debug commands
+
+When any class is `register()`ed, these slash commands are registered at start-up (custom commands of the Script API; cheats on, operators). Timeline, part and property names autocomplete.
+
+| Command | |
+| --- | --- |
+| `/hakomc:info [target]` | Health, properties, timelines (`▶` = running), parts |
+| `/hakomc:run <timeline> [target]` | Start a timeline (restart if running). The player who typed it is passed as the first argument |
+| `/hakomc:stop [target]` | Cancel all timelines |
+| `/hakomc:part <part> <break / restore> [target]` | Break or restore a part |
+| `/hakomc:prop <property> <value> [target]` | Set a property (`true` / `false` / numbers are converted) |
+| `/hakomc:do <command> [target]` | A command added with `Cls.command(name, (self, ctx) => …)` |
+
+Without `[target]` the nearest registered entity within 32 blocks that supports the command is used (for `stop`, the nearest with a running timeline). Actions run on the next tick, because the world cannot be changed inside a custom command. `Cls.command` receives `ctx.player` (who typed it).
+
+```ts
+Frog.command('pounce_me', (frog, ctx) => {
+  if (ctx.player) frog.pounce.interrupt(ctx.player);
+});
+```
+
+In tests: `sim.startup()` registers the commands, `sim.command('/hakomc:run pounce', { player })` runs one and returns `{ status, message }`.
+
 ### Using `src/pack.ts` instead
 
 If `src/index.ts` cannot run in the simulated environment (it calls something not simulated at the top level), put the list in `src/pack.ts`; it is used instead of `src/index.ts` when it exists. Registration for the hooks is still `register()`.
@@ -564,6 +587,31 @@ pounce = this.timeline(this.pounceSteps, { lane: 'attack', holdStill: true });  
 | `this.face(target, turnSpeed = 30)` | 位置・エンティティ（位置を追い続ける）・`() => 位置` のほうへ、1 tick に `turnSpeed`° まで回って向く。`undefined` でやめる |
 
 止まっている間は、`minecraft:movement` の現在の値を 0 にし、終わったら既定の値に戻します（`movement` のコンポーネントが必要です）。止まっている途中でサーバーが止まっても、そのエンティティが次に読み込まれたときに戻します。
+
+### デバッグ用のコマンド
+
+`register()` したクラスがあると、起動時に次のスラッシュコマンドを登録します（Script API のカスタムコマンド。チート有効・オペレーター）。timeline・部位・プロパティの名前は補完に出ます。
+
+| コマンド | |
+| --- | --- |
+| `/hakomc:info [対象]` | 体力・プロパティ・timeline（`▶` は動いている）・部位を見る |
+| `/hakomc:run <timeline> [対象]` | timeline を始める（動いていればやり直す）。打ったプレイヤーを最初の引数に渡す |
+| `/hakomc:stop [対象]` | timeline を全部止める |
+| `/hakomc:part <部位> <break / restore> [対象]` | 部位を壊す・戻す |
+| `/hakomc:prop <プロパティ> <値> [対象]` | プロパティに値を入れる（`true` / `false` / 数値は変換する） |
+| `/hakomc:do <コマンド> [対象]` | `Cls.command(name, (self, ctx) => …)` で足したコマンド |
+
+- **対象を省いたとき:** 打った人から 32 ブロック以内で、いちばん近くの、そのコマンドが使える個体が対象になります（`stop` は、timeline が動いている個体）。
+- **実行のタイミング:** 次の tick に実行します。カスタムコマンドの中では、世界を変更できないためです。
+- **`Cls.command`:** 打った人を `ctx.player` で受け取れます。
+
+```ts
+Frog.command('pounce_me', (frog, ctx) => {
+  if (ctx.player) frog.pounce.interrupt(ctx.player);
+});
+```
+
+テストでは、`sim.startup()` でコマンドを登録し、`sim.command('/hakomc:run pounce', { player })` で実行します。戻り値は `{ status, message }` です。
 
 ### 代わりに `src/pack.ts` を使う
 

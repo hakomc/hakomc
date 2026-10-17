@@ -69,6 +69,7 @@ it('enrages after 240 damage', () => {
 | `spawn(id, loc)` / `spawnPlayer(name, loc, { gameMode })` | Returns the real `Entity` / `Player` types |
 | `respawn(player)` / `hurt(target, amount, opts)` | `hurt` simulates a vanilla hit: fires `entityHitEntity` (melee with `damagingEntity`) and goes through `beforeEvents.entityHurt` even with 0 damage |
 | `scriptEvent(id, msg, { sourceEntity })` / `entityEvent(entity, name)` / `emit(path, payload)` | Fire `/scriptevent`, `/event entity`, or any signal |
+| `startup()` / `command(line, { player })` | Fire `system.beforeEvents.startup` (custom commands get registered) / run a registered custom command; returns `{ status, message }`. Selectors: `@s`, `@p`, `@a`, `@e`, `[type=…]` |
 | `setGround(y)` / `setBlock(loc, id)` / `setDifficulty(d)` | World setup |
 | `logs(kind, where)` / `log` / `errors` | Recorded camera, input, action bar, sounds, particles, commands, animations, damage, landings… |
 | `internals(entity)` | Test-only access, e.g. `headYawOffset` to make the head face elsewhere than the body |
@@ -148,6 +149,7 @@ it('240 ダメージで怒る', () => {
 | `spawn(id, loc)` / `spawnPlayer(name, loc, { gameMode })` | 本物の `Entity` / `Player` の型を返す |
 | `respawn(player)` / `hurt(target, amount, opts)` | `hurt` はバニラの攻撃の再現。`damagingEntity` 付きの近接攻撃なら `entityHitEntity` も発火し、0 ダメージでも `beforeEvents.entityHurt` を通る |
 | `scriptEvent(id, msg, { sourceEntity })` / `entityEvent(entity, name)` / `emit(path, payload)` | `/scriptevent`・`/event entity`・任意のイベントを発火する |
+| `startup()` / `command(line, { player })` | `system.beforeEvents.startup` を発火する（カスタムコマンドが登録される）/ 登録されたカスタムコマンドを実行し、`{ status, message }` を返す。セレクターは `@s`・`@p`・`@a`・`@e`・`[type=…]` |
 | `setGround(y)` / `setBlock(loc, id)` / `setDifficulty(d)` | 世界の準備 |
 | `logs(kind, where)` / `log` / `errors` | カメラ・入力制限・アクションバー・音・パーティクル・コマンド・アニメーション・ダメージ・着地などの記録 |
 | `internals(entity)` | テスト専用の内部操作。例: `headYawOffset` で頭だけ体と別の方向を向かせる |

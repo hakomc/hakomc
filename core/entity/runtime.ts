@@ -8,6 +8,7 @@
 import { system, world, type Entity } from '@minecraft/server';
 import { registry, type Entry, type HookTarget, type LastKnown, type LoadReason, type RegisteredClass } from './registry';
 import { installGrab } from './grab';
+import { installCommands } from './commands';
 import { isScriptedHit } from './motion';
 import { releaseLeftoverStill } from './still';
 import { handlePartGone, handlePartHurt, removeParts, sweepOrphanParts, syncParts } from './parts-runtime';
@@ -245,6 +246,8 @@ function install() {
 
   // 掴み: 戻し損ねたプレイヤーを、出現したときに戻せるように
   installGrab();
+  // デバッグ用のコマンド（/hakomc:info など）を、起動時に登録する
+  installCommands();
 
   world.afterEvents.worldLoad.subscribe(() => scan());
   // /reload のときなど worldLoad が来ない場合に備えて、最初の tick でも探す（二重には作らない）
