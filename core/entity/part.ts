@@ -26,6 +26,11 @@ export interface PartOptions {
   health?: number;
   /** 本体に伝えるダメージの原因（既定 entityAttack と projectile。爆発や炎で部位の数だけ本体が減らないように） */
   causes?: readonly string[];
+  /**
+   * 壊れている間に隠す、本体のモデルのボーン。
+   * client_sync のプロパティと、それを見て隠すレンダーコントローラーを自動で作る
+   */
+  hideBone?: string | readonly string[];
 }
 
 /** 部位のクラスの印 */
@@ -135,4 +140,44 @@ export function partResourceFiles(bodyId: string, fileName: string, parts: reado
     };
   }
   return files;
+}
+
+/** hideBone を使う部位の「壊れているか」のプロパティ（本体に付く。RP から q.property で読める） */
+export const partBrokenProperty = (bodyId: string, part: PartClass) => `${bodyId.split(':')[0]}:part_${part.id}_broken`;
+
+export const hiddenBones = (part: PartClass): readonly string[] => {
+  const b = part.options.hideBone;
+  return b === undefined ? [] : typeof b === 'string' ? [b] : b;
+};
+
+/**
+ * 部位の当たり判定が、本体の当たり判定にどれだけ埋まるかを調べる。
+ * 当たり判定はどちらも向きを変えない箱で、部位の位置だけが本体の向きに合わせて回るので、15° ごとに確かめる。
+ * 攻撃は視線上でいちばん手前の当たり判定に当たるため、埋まった所を狙っても本体に当たってしまう。
+ */
+export function partOverlapWarnings(bodyId: string, parts: readonly PartClass[], body: { width: number, height: number } | undefined): string[] {
+  if (!body) return [];
+  const hw = body.width / 2;
+  const out: string[] = [];
+  for (const part of parts) {
+    const [sx, sy, sz] = part.options.seat;
+    const [w, h] = part.options.size;
+    let worst = 0, worstAngle = 0;
+    for (let deg = 0; deg < 360; deg += 15) {
+      const a = (deg * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+      const cx = sx * c - sz * s, cz = sx * s + sz * c;
+      const ox = Math.max(0, Math.min(cx + w / 2, hw) - Math.max(cx - w / 2, -hw));
+      const oz = Math.max(0, Math.min(cz + w / 2, hw) - Math.max(cz - w / 2, -hw));
+      const oy = Math.max(0, Math.min(sy + h, body.height) - Math.max(sy, 0));
+      const buried = (ox * oz * oy) / (w * w * h);
+      if (buried > worst + 1e-9) {
+        worst = buried;
+        worstAngle = deg;
+      }
+    }
+    if (worst >= 0.5) {
+      out.push(`${bodyId}: 部位 ${part.id} の当たり判定が、本体の当たり判定に最大 ${Math.round(worst * 100)}% 埋まる（本体の向き ${worstAngle}°）。埋まった所を狙うと本体に当たるので、座席を外へ出すか、本体の当たり判定を小さくする`);
+    }
+  }
+  return out;
 }

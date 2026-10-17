@@ -7,7 +7,7 @@
  */
 import { system, world, type Entity, type EntityHurtAfterEvent } from '@minecraft/server';
 import { registry, type Entry, type HookTarget } from './registry';
-import { PART_BREAK_EVENT, PART_FAMILY, PART_RESTORE_EVENT, partTypeId, type PartClass } from './part';
+import { PART_BREAK_EVENT, PART_FAMILY, PART_RESTORE_EVENT, hiddenBones, partBrokenProperty, partTypeId, type PartClass } from './part';
 
 /** 部位の状態と操作 */
 export interface PartHandle {
@@ -83,6 +83,11 @@ export function partHandle(owner: Owner, part: PartClass): PartHandle {
 }
 
 function applyBroken(owner: HookTarget, part: PartClass, broken: boolean) {
+  // hideBone: 本体のプロパティで、RP が壊れた部位のボーンを隠す
+  if (hiddenBones(part).length && isValid(owner.entity)) {
+    const bodyId = owner.entity.typeId;
+    owner.entity.setProperty(partBrokenProperty(bodyId, part), broken);
+  }
   const e = partEntities.get(owner)?.get(part.id);
   if (e && isValid(e)) e.triggerEvent(broken ? PART_BREAK_EVENT : PART_RESTORE_EVENT);
 }

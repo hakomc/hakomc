@@ -5,7 +5,7 @@ import { Timeline, type Clock, type Steps, type TimelineOptions, type WaitReques
 import type { Component, EventRef } from './component';
 import { EntityEvent, type GroupClass } from './event';
 import type { PropertyClass, ValueOf } from './property';
-import { bodyRideable, partEntityJson, partResourceFiles, type PartClass } from './part';
+import { bodyRideable, hiddenBones, partBrokenProperty, partEntityJson, partOverlapWarnings, partResourceFiles, type PartClass } from './part';
 import { partHandle, type PartHandle } from './parts-runtime';
 import { grab, type GrabOptions, type Hold } from './grab';
 
@@ -65,6 +65,8 @@ export interface PackFiles {
   resource: Record<string, unknown>;
   /** 言語 → 「キー=値」の行 */
   lang: Record<string, string[]>;
+  /** ビルドは止めないが、知らせたいこと（部位が本体に埋まっている、など） */
+  warnings?: string[];
 }
 
 import { EntityDefinitionError } from './errors';
@@ -160,6 +162,7 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
       return out;
     };
 
+    const warnings: string[] = [];
     const base = componentsJson(def.components ?? [], 'components');
     const parts = def.parts ?? [];
     if (parts.length) {
@@ -171,6 +174,7 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
         seen.add(part.id);
       }
       base['minecraft:rideable'] = bodyRideable(id, parts);
+      warnings.push(...partOverlapWarnings(id, parts, base['minecraft:collision_box'] as { width: number, height: number } | undefined));
     }
     const groupJson: Record<string, unknown> = {};
     const eventJson: Record<string, unknown> = {};
@@ -212,6 +216,13 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
     }
 
     const propertiesJson: Record<string, unknown> = {};
+    // hideBone を使う部位の「壊れているか」（RP で隠すのに使う）
+    const hiding = parts.filter((p) => hiddenBones(p).length);
+    for (const part of hiding) {
+      const name = partBrokenProperty(id, part);
+      if (props.has(name)) throw new EntityDefinitionError(`${id}: プロパティ ${name} は、部位 ${part.id} の hideBone が使う名前と重なっている`);
+      propertiesJson[name] = { type: 'bool', default: false, client_sync: true };
+    }
     for (const [name, P] of props) {
       const p = new (P as unknown as new () => { toJson(): Record<string, unknown>, default: unknown, range?: [number, number], values?: readonly string[] })();
       if (p.values && !p.values.includes(p.default as string)) throw new EntityDefinitionError(`${id}: ${name} の既定値 "${p.default}" が values に無い`);
@@ -233,7 +244,7 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
             identifier: id,
             is_spawnable: def.spawnable ?? true,
             is_summonable: def.summonable ?? true,
-            ...(props.size ? { properties: propertiesJson } : {}),
+            ...(Object.keys(propertiesJson).length ? { properties: propertiesJson } : {}),
             ...def.description,
           },
           ...(groups.size ? { component_groups: groupJson } : {}),
@@ -246,6 +257,30 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
     // 部位の見た目（何も描かない）。本体に client が無くても作る
     const resource: Record<string, unknown> = { ...partResourceFiles(id, fileName, parts) };
     const c = def.client;
+    // 壊れた部位のボーンを隠すレンダーコントローラー
+    let renderControllers = c?.renderControllers;
+    if (hiding.length) {
+      const visibility = hiding.flatMap((p) => hiddenBones(p).map((bone) => ({ [bone]: `!q.property('${partBrokenProperty(id, p)}')` })));
+      if (!c) {
+        warnings.push(`${id}: 部位の hideBone は、client（見た目）を定義したときだけ効く`);
+      } else if (renderControllers) {
+        warnings.push(`${id}: renderControllers を自分で書いているので、壊れた部位を隠すには、そのレンダーコントローラーの part_visibility に ${JSON.stringify(visibility)} を足す`);
+      } else {
+        const rc = `controller.render.${id.replace(':', '_')}`;
+        renderControllers = [rc];
+        resource[`render_controllers/${fileName}.render_controllers.json`] = {
+          format_version: '1.8.0',
+          render_controllers: {
+            [rc]: {
+              geometry: 'Geometry.default',
+              materials: [{ '*': 'Material.default' }],
+              textures: ['Texture.default'],
+              part_visibility: [{ '*': true }, ...visibility],
+            },
+          },
+        };
+      }
+    }
     if (c) {
       const egg = c.spawnEgg && ('texture' in c.spawnEgg
         ? { texture: c.spawnEgg.texture, ...(c.spawnEgg.textureIndex !== undefined ? { texture_index: c.spawnEgg.textureIndex } : {}) }
@@ -258,7 +293,7 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
             materials: one(c.materials ?? 'entity_alphatest'),
             textures: one(c.textures),
             geometry: one(c.geometry),
-            render_controllers: c.renderControllers ?? ['controller.render.default'],
+            render_controllers: renderControllers ?? ['controller.render.default'],
             ...(c.animations ? { animations: c.animations } : {}),
             ...(c.scripts ? { scripts: c.scripts } : {}),
             ...(egg ? { spawn_egg: egg } : {}),
@@ -274,7 +309,7 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
       (lang[code] ??= []).push(`entity.${id}.name=${text}`);
       if (c?.spawnEgg) lang[code].push(`item.spawn_egg.entity.${id}.name=${text}`);
     }
-    return { behavior, resource, lang };
+    return { behavior, resource, lang, warnings };
   };
 
   /** 1 体ごとのクラスの土台。get / set / trigger は、この定義にあるプロパティ・イベントしか受け付けない */

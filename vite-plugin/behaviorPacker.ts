@@ -181,6 +181,7 @@ const behaviorPacker = ({
         const loaded = await loadPack(packEntry);
         packFiles = loaded.entities ? loaded.files : undefined;
         for (const f of loaded.watchFiles) this.addWatchFile(f);
+        for (const w of packFiles?.warnings ?? []) this.warn(w);
       } catch (e) {
         const err = e instanceof PackLoadError ? e : new PackLoadError(String(e), 0, false);
         // エンティティを使っていないプロジェクトで、スクリプトの入口が模擬環境で動かないだけなら、止めずに知らせる

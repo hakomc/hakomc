@@ -148,6 +148,7 @@ Golem.register();
 | `damageMultiplier` | Damage passed to the body (default 1) |
 | `health` | The part breaks after this much damage (counted before the multiplier). Without it the part never breaks |
 | `causes` | Causes passed to the body (default `entityAttack`, `projectile`), so fire or an explosion does not hit the body once per part |
+| `hideBone` | Bone(s) of the body's model to hide while the part is broken. A client-synced property (`<namespace>:part_<id>_broken`) and a render controller are generated. If you write your own `renderControllers`, a build warning shows the `part_visibility` entries to add |
 
 - Generated: an entity per part (`demo:golem_back`) with a client entity that draws nothing (an empty model), and the body's `minecraft:rideable` (do not write your own).
 - Damage to a part goes to the body, multiplied; the part itself never loses health. Damage from the body itself or its other parts is ignored.
@@ -155,6 +156,7 @@ Golem.register();
 - Part health and the broken state are saved on the body (dynamic property) and survive reloads. When the body is loaded, parts are put back on their seats in order; a missing one is spawned again.
 - The body dying removes its parts. A part without its body is removed after two checks (every 40 ticks).
 - `this.part(Back)`: `entity`, `health`, `maxHealth`, `broken`, `break()`, `restore()`. Hooks: `onPartHurt(part, damage, ev)`, `onPartBreak(part)`, `onPartRestore(part)`.
+- An attack hits the nearest hitbox along the line of sight, so a part buried in the body's hitbox cannot be hit — the body is hit instead. The build warns when 50% or more of a part's hitbox is inside the body's at some facing (checked every 15°; hitboxes do not rotate, only the seat position does). Move the seat outwards or make the body's hitbox smaller.
 - In tests, `sim.loadEntityClass(Golem)` loads the body and the parts.
 
 ### Grabbing a player
@@ -397,6 +399,7 @@ Golem.register();
 | `damageMultiplier` | 本体に伝えるダメージの倍率（既定 1） |
 | `health` | この分のダメージで部位が壊れる（倍率を掛ける前の値で減る）。書かなければ壊れない |
 | `causes` | 本体に伝えるダメージの原因（既定 `entityAttack`・`projectile`）。炎や爆発で、部位の数だけ本体が減らないように |
+| `hideBone` | 部位が壊れている間に隠す、本体のモデルのボーン。client_sync のプロパティ（`<名前空間>:part_<id>_broken`）とレンダーコントローラーを自動で作る。`renderControllers` を自分で書いているときは、足すべき `part_visibility` をビルド時の警告で知らせる |
 
 - **作られるもの:** 部位ごとのエンティティ（`demo:golem_back`）と、何も描かないクライアント側の定義（空のモデル）、本体の `minecraft:rideable` を作ります。`minecraft:rideable` は自分で書かないでください。
 - **ダメージの伝わり方:**
@@ -410,6 +413,7 @@ Golem.register();
 - **スクリプトからの操作:**
   - `this.part(Back)` で `entity`・`health`・`maxHealth`・`broken`・`break()`・`restore()` が使えます。
   - フックは `onPartHurt(part, damage, ev)`・`onPartBreak(part)`・`onPartRestore(part)` です。
+- **本体に埋まった部位:** 攻撃は視線上でいちばん手前の当たり判定に当たるので、本体の当たり判定に埋まった部位は叩けず、本体に当たります。そのため、ある向きで部位の当たり判定の 50% 以上が本体の中に入る場合は、ビルド時に警告します（15° ごとに確かめます。当たり判定の箱自体は回らず、座席の位置だけが回ります）。座席を外へ出すか、本体の当たり判定を小さくしてください。
 - **テスト:** `sim.loadEntityClass(Golem)` で、本体と部位の JSON をまとめて読み込めます。
 
 ### プレイヤーを掴む
