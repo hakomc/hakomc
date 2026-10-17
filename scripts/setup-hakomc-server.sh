@@ -164,6 +164,8 @@ if [ -n "$UUID" ]; then
 else
   UUID=$(generate_uuid)
 fi
+# The resource pack needs its own UUID (never the same as the behavior pack's)
+RP_UUID=$(generate_uuid)
 
 prompt OPS "Operator XUIDs for the dev server (comma-separated, optional)" "$OPS"
 prompt SERVER_PORT "Dev server UDP port" "$SERVER_PORT"
@@ -176,6 +178,7 @@ printf '  name        : %s\n' "$NAME"
 printf '  description : %s\n' "${DESCRIPTION:-(none)}"
 printf '  directory   : %s\n' "$DIR"
 printf '  uuid        : %s\n' "$UUID"
+printf '  rp uuid     : %s\n' "$RP_UUID"
 printf '  branch      : %s\n' "$BRANCH"
 printf '  ops         : %s\n' "${OPS:-(none)}"
 printf '  server port : %s\n' "$SERVER_PORT"
@@ -199,12 +202,20 @@ sed -i \
 
 sed -i \
   -e "s/name: \"[^\"]*\"/name: \"${ESCAPED_NAME}\"/" \
-  -e "s/uuid: \"[^\"]*\"/uuid: \"${UUID}\"/" \
+  -e "/resourcePack/ s/uuid: \"[^\"]*\"/uuid: \"${RP_UUID}\"/" \
+  -e "/resourcePack/! s/uuid: \"[^\"]*\"/uuid: \"${UUID}\"/" \
   vite.config.app.js
 
 sed -i \
   -e "s/\"pack_id\": \"[^\"]*\"/\"pack_id\": \"${UUID}\"/" \
   worlds/DevWorld/world_behavior_packs.json
+
+# Templates older than the resource pack support have no world_resource_packs.json
+if [ -f worlds/DevWorld/world_resource_packs.json ]; then
+  sed -i \
+    -e "s/\"pack_id\": \"[^\"]*\"/\"pack_id\": \"${RP_UUID}\"/" \
+    worlds/DevWorld/world_resource_packs.json
+fi
 
 # --- Create .env from .env.example ---
 log "Creating .env"
