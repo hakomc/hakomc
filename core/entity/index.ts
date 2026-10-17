@@ -11,3 +11,4 @@ export { type PartHandle } from './parts-runtime';
 export { CameraPreset, holdOf, type CameraPresetId, type GrabOptions, type Hold, type LockKind, type ReleaseReason } from './grab';
 export { airTicks, horizontalSpeedFor, type HitOptions, type LeapOptions, type LeapResult } from './motion';
 export { type FaceTarget, type Still } from './still';
+export { describe as describeEntity, type CommandContext } from './commands';

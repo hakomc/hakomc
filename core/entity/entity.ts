@@ -10,6 +10,7 @@ import { partHandle, type PartHandle } from './parts-runtime';
 import { grab, type GrabOptions, type Hold } from './grab';
 import { hit, leap, type HitOptions, type LeapOptions, type LeapResult } from './motion';
 import { holdStill, toFacingTarget, type FaceTarget, type Still } from './still';
+import { addCommand, type CommandContext } from './commands';
 
 /** 言語ごとの文字列（en_US / ja_JP など） */
 export type Localized = Partial<Record<'en_US' | 'ja_JP' | (string & {}), string>>;
@@ -362,6 +363,14 @@ export function entity<const P extends PropertyClass = never, const E extends Ev
      */
     static register(this: abstract new (entity: Entity) => Definition): void {
       register(this as unknown as RegisteredClass);
+    }
+
+    /**
+     * デバッグ用のコマンドを足す。`/hakomc:do <name>` で、打った人のいちばん近くの個体（または [対象] の個体）に対して呼ばれる。
+     * 呼ばれるのは次の tick（カスタムコマンドの中では世界を変更できないため）
+     */
+    static command<T extends Definition>(this: abstract new (entity: Entity) => T, name: string, fn: (self: T, ctx: CommandContext) => void, description?: string): void {
+      addCommand(this as unknown as RegisteredClass, name, fn as never, description);
     }
 
     /** 今いる、このクラスの個体（register() 済みのとき） */

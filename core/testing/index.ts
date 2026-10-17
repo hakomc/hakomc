@@ -13,6 +13,7 @@
  */
 import { state, signals, record, clearAllSubscriptions, type EntityTypeDef, type LogEntry, type Vector3 } from './runtime';
 import { MockEntity, MockPlayer, stepPhysics, flushProperties } from './entity';
+import { MockCustomCommandRegistry, selectEntities, tokenize } from './commands';
 import { getDimension, world as mockWorld, system as mockSystem } from './server';
 import type { Entity, Player, Dimension, World, System } from '@minecraft/server';
 
@@ -87,6 +88,8 @@ function typeFromEntityJson(json: any): [string, EntityTypeDef] {
     events,
   }];
 }
+
+let commandRegistry: MockCustomCommandRegistry | undefined;
 
 export const sim = {
   /** スクリプトの例外（タイマーやイベントハンドラ内）を、tick() の呼び出し元に投げ直すか。既定 true */
@@ -234,6 +237,52 @@ export const sim = {
     const r = before.damage > 0 ? target.applyDamage(before.damage, opts as any) : true;
     rethrowNewErrors();
     return r;
+  },
+
+  /** 起動時のイベント（system.beforeEvents.startup）を出す。カスタムコマンドはここで登録される */
+  startup() {
+    const reg = new MockCustomCommandRegistry();
+    commandRegistry = reg;
+    signals.systemBefore.startup.emit({ customCommandRegistry: reg, blockComponentRegistry: {}, itemComponentRegistry: {} });
+    rethrowNewErrors();
+    return reg;
+  },
+
+  /**
+   * 登録されたカスタムコマンドを実行する（先に sim.startup() が必要）。
+   * 例: sim.command('/hakomc:run pounce', { player }) / sim.command('/hakomc:info @e[type=demo:frog]')
+   * @returns コマンドの結果（{ status, message }）
+   */
+  command(line: string, opts: { player?: Player } = {}): { status: number, message?: string } {
+    if (!commandRegistry) throw new Error('[hakomc/testing] 先に sim.startup() を呼ぶ（カスタムコマンドは起動時に登録される）');
+    const [name, ...args] = tokenize(line.replace(/^\//, ''));
+    const cmd = commandRegistry.commands.get(name);
+    if (!cmd) throw new Error(`[hakomc/testing] コマンド ${name} は登録されていない`);
+    const params = [...(cmd.def.mandatoryParameters ?? []), ...(cmd.def.optionalParameters ?? [])];
+    if (args.length < (cmd.def.mandatoryParameters?.length ?? 0)) throw new Error(`[hakomc/testing] ${name}: 引数が足りない`);
+    if (args.length > params.length) throw new Error(`[hakomc/testing] ${name}: 引数が多すぎる`);
+    const source = opts.player as unknown as MockEntity | undefined;
+    const values = args.map((a, i) => {
+      const p = params[i];
+      switch (p.type) {
+        case 'Enum': {
+          const vs = commandRegistry!.enums.get(p.name)!;
+          if (!vs.includes(a)) throw new Error(`[hakomc/testing] ${name}: ${a} は ${p.name}（${vs.join(' / ')}）に無い`);
+          return a;
+        }
+        case 'Integer': return parseInt(a, 10);
+        case 'Float': return parseFloat(a);
+        case 'Boolean': return a === 'true';
+        case 'EntitySelector':
+        case 'PlayerSelector': return selectEntities(a, source);
+        default: return a;
+      }
+    });
+    const origin = { sourceType: source ? 'Entity' : 'Server', sourceEntity: source, initiator: source };
+    const result = cmd.callback(origin, ...values) ?? { status: 0 };
+    record('command', { name, args, status: result.status, message: result.message });
+    rethrowNewErrors();
+    return result;
   },
 
   /** /scriptevent の再現。sourceEntity を渡すと /execute as ... run scriptevent 相当 */
